@@ -1,0 +1,1690 @@
+/*
+ * Helios — custom CSS layered on top of libadwaita.
+ *
+ * Design notes:
+ *   * All transitions use cubic-bezier(0.4, 0, 0.2, 1) (the "standard" Material/
+ *     Apple "ease-in-out") at ~220ms — long enough to feel intentional,
+ *     short enough to never feel sluggish.
+ *   * Colors source from libadwaita's @-named tokens so dark/light follows
+ *     the system.
+ *   * Hover states use subtle background fades, not size jumps.
+ *   * The activity indicator and pulsing dot are CSS keyframe animations
+ *     (1.4s loop, ease-in-out).
+ */
+
+/* Standard easings used everywhere. */
+
+/* There is deliberately NO fixed brand accent here. libadwaita 1.6+ resolves
+ * @accent_color from the user's system accent, so a hardcoded one splits the UI
+ * into two palettes: selection washes, focus rings and blockquote bars follow
+ * the system while anything pinned stays put. That is not hypothetical — the
+ * old `@define-color helios-accent #cc6e48` (warm terracotta) agreed with the
+ * system accent only on Ubuntu's default orange, which is what every clean test
+ * box and CI runner shows. On a desktop set to purple the mission-quota marker
+ * was the one orange thing on screen. Semantic colors (@success_color,
+ * @warning_color, @error_color) and the deliberately-fixed alarm colors below
+ * are the exception: those must NOT track the accent. */
+
+/* "Busy" has no semantic token. libadwaita gives us @success_color,
+ * @warning_color and @error_color but nothing for work-in-progress, and
+ * @accent_color cannot stand in: it follows the system accent, so on a purple
+ * or blue desktop the working dot becomes the same colour as the selection
+ * wash and the send button and stops reading as a state at all. So this is a
+ * FIXED colour on purpose, in the same class as the provider-chip brand
+ * colours near the bottom of the file — chosen to stay legible against
+ * @sidebar_bg_color in both schemes and to sit clear of the OpenRouter chip's
+ * indigo (#6366f1). Must be declared before first use; GTK resolves
+ * @define-color in document order. */
+@define-color helios_working #a855f7;
+
+
+/* ── Layout shells ────────────────────────────────────────────── */
+
+.helios-window {
+    background-color: @window_bg_color;
+}
+
+.helios-session-list,
+.helios-session-column,
+.helios-context-column,
+.helios-context {
+    background-color: @sidebar_bg_color;
+}
+
+/* ── Glass ────────────────────────────────────────────────────────
+ *
+ * Opt-in: helios.app adds `.helios-glass` to the window when the
+ * appearance.GLASS_UI_STATE_KEY preference is on. Nothing below applies
+ * otherwise, so the default look is byte-identical to before.
+ *
+ * THE SHAPE INVERTED ON 2026-08-20, and the old shape is worth stating because
+ * every comment here used to defend it: glass was on the SESSION LIST and the
+ * whole transcript side was re-painted opaque, "because prose over a moving
+ * desktop is unreadable". The desktop-wide layer (the desktop theme repository) settled on the
+ * opposite arrangement and it is now the house style across every GTK4 app on
+ * the box — GNOME Settings is the reference: the navigation column is ONE SOLID
+ * run from the top of the window to the bottom, and the content pane is glass
+ * all the way up with no title bar and no chrome band separating it.
+ *
+ * Measured off that reference: sidebar flat 50.00 with column std 0.00; content
+ * header 40.73 against 41.22 immediately beneath it, continuous, on a smooth
+ * 40.7 -> 51.0 vertical ramp at column std 0.1..0.4. So Helios swaps sides.
+ *
+ * "Prose over a moving desktop" was a real worry and it is answered by the
+ * number, not by avoidance: 0.72 was already measured safe against EVERY
+ * backdrop for both schemes (worst case 5.44:1, clear of AA 4.5:1 — see
+ * test_the_alpha_is_safe_over_any_backdrop). The transcript sits on exactly that
+ * composite. What still does not sit on it are the CARDS — the composer keeps
+ * its opaque @card_bg_color fill, exactly as the boxed lists in Settings stay
+ * opaque while the page behind them is glass.
+ *
+ * The alpha goes on EXACTLY ONE node, still. Putting it on both the window and
+ * a child double-composites where they overlap: two 0.72 layers make the overlap
+ * 1-(1-0.72)^2 = 92% against 72%, a visible seam. Measured 92.6% vs 72.3% before
+ * that was fixed the first time; the same trap applies to the new arrangement,
+ * which is why the transcript is cleared to `transparent` rather than given its
+ * own 0.72.
+ *
+ * There is deliberately NO headerbar rule. Adw.ToolbarView is flat — the header
+ * paints nothing and shows whatever is behind it — so leaving it alone is what
+ * makes it continuous with the content and gives the reference's "no top bar".
+ * The previous version re-stated @window_bg_color here, which painted the header
+ * opaque and was precisely the top bar this design has none of.
+ */
+window.helios-glass {
+    background-color: alpha(@window_bg_color, 0.72);
+}
+
+/* `:not(tooltip)` is load-bearing. A tooltip is its own Wayland surface, but its
+   CSS node hangs off the window's, so a bare `> *` reaches it — and libadwaita
+   puts the tooltip's plate on that very node (`tooltip.background`), with
+   nothing beneath it to repaint. Measured on the development workstation (GNOME 50 Wayland, GTK
+   4.22.4, gl and cairo alike): class off, the fill reads srgb(6,6,11) against a
+   srgb(29,29,32) window; class on, the interior reads the window's own
+   srgb(32,32,32) and only the 1px border survives — the session-row tooltip was
+   bare white text on the sidebar. Popovers are deliberately NOT excluded: their
+   fill lives on `> contents`, which this rule never reaches. */
+window.helios-glass > *:not(tooltip) {
+    background-color: transparent;
+}
+
+/* The transcript's default rule paints @window_bg_color opaquely, which would
+   sit on top of the window's alpha and make the content side solid again. */
+window.helios-glass .helios-transcript {
+    background-color: transparent;
+}
+
+/* The solid navigation column, and the node has to be the COLUMN rather than
+   the list: the list starts below the sidebar's header bar, so filling it left
+   a glass strip across the top of the column and the solid run did not reach
+   the window edge — which is the one thing the reference is about. The
+   Adw.ToolbarView wrapping header + list is the first node that spans both.
+
+   Opaque while focused, cleared in `:backdrop` — the focus cue lives here
+   rather than on the chrome, so the window can say active/inactive without ever
+   growing a top bar. Cleared, NOT re-tinted: the window already carries the
+   alpha, and a second 0.72 here composites to 1-(1-0.72)^2 = 92% against the
+   content side's 72%, the seam measured at 92.6 vs 72.3 the first time this
+   file got it wrong. Alpha on exactly one node, in every state.
+
+   The specular hairline stays on this node too: flat translucency alone does
+   not read as glass, which is what "an asset is just straight up missing" was
+   describing. */
+window.helios-glass .helios-session-column {
+    background-color: @sidebar_bg_color;
+    box-shadow:
+        inset 0 1px 0 0 alpha(#ffffff, 0.10),
+        inset -1px 0 0 0 alpha(#ffffff, 0.07);
+}
+
+window.helios-glass .helios-session-column:backdrop {
+    background-color: transparent;
+}
+
+/* The right-hand pane is the other navigation column and gets the same
+   treatment, mirrored: solid while focused, cleared in :backdrop, specular
+   hairline on the LEADING edge because this column's outer edge is the other
+   one. It needs saying explicitly for the same reason the desktop layer
+   declares `.sidebar` explicitly — Adw.OverlaySplitView does not fill its own
+   sidebar, so without this the pane is whatever its pages happen to paint.
+   That was the bug: Plan/Context/Missions each carried a fill, the shared
+   scratchpad did not, and the view switcher above all four never did, so the
+   switcher tabs and the whole Shared page sat on the bare desktop and were
+   measurably unreadable (alpha 0 at y=5..60 in every page render). */
+window.helios-glass .helios-context-column {
+    box-shadow:
+        inset 0 1px 0 0 alpha(#ffffff, 0.10),
+        inset 1px 0 0 0 alpha(#ffffff, 0.07);
+}
+
+window.helios-glass .helios-context-column:backdrop {
+    background-color: transparent;
+}
+
+/* The pages sit ON the column, so they must not paint their own fill —
+   otherwise the column's `:backdrop` clear is covered up and this pane alone
+   stays solid when the window is not focused. Same rule, same reason, as
+   `.helios-session-list` above. `.helios-shared-pane` is absent because it
+   never painted one; that is what made it the visible half of this bug. */
+window.helios-glass .helios-context-column .helios-plan-pane,
+window.helios-glass .helios-context-column .helios-context,
+window.helios-glass .helios-context-column .helios-mission-pane {
+    background-color: transparent;
+}
+
+/* The list sits ON the column, so it must not paint its own fill — otherwise
+   the column's `:backdrop` clear is covered up and the column stays solid when
+   the window is not focused. */
+window.helios-glass .helios-session-list {
+    background-color: transparent;
+}
+
+/* Only the `list` element is cleared. Adwaita gives it a @view_bg_color fill of
+   its own, which would sit opaquely on top of the container's alpha.
+   Rows are deliberately NOT in this selector. They are already transparent by
+   default, and `window.helios-glass .helios-session-row` is specificity (0,2,1)
+   — which beats `.helios-session-row:selected` at (0,2,0) and erases the
+   selection wash outright. Measured with the row rule present: the selected row
+   and a normal row both rendered srgba(46,46,50,0.72), i.e. it became impossible
+   to see which session was active. Anything added here must keep losing to
+   :selected and :hover. */
+window.helios-glass .helios-session-list list {
+    background-color: transparent;
+}
+
+.helios-context-preview {
+    font-size: 10pt;
+    background: transparent;
+}
+
+/* "Claude updated memory: <file>" banner in the narrow context sidebar —
+   same rationale as .helios-context-preview above: the default Adw.Banner
+   title size reads slightly large at 280px wide. */
+.helios-context-memory-banner {
+    font-size: 10pt;
+}
+
+.helios-plan-pane {
+    background-color: @sidebar_bg_color;
+}
+
+.helios-plan-phase {
+    border-radius: 8px;
+    padding: 8px;
+    transition:
+        background-color 220ms cubic-bezier(0.4, 0, 0.2, 1),
+        color 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.helios-plan-phase.helios-plan-active {
+    background-color: alpha(@accent_color, 0.10);
+}
+
+.helios-plan-phase.helios-plan-blocked {
+    background-color: alpha(@warning_color, 0.10);
+}
+
+.helios-plan-phase.helios-plan-interrupted {
+    background-color: alpha(@view_fg_color, 0.06);
+}
+
+.helios-plan-marker {
+    min-width: 12px;
+    min-height: 12px;
+    border-radius: 100%;
+    background-color: alpha(@view_fg_color, 0.24);
+}
+
+.helios-plan-marker-done {
+    background-color: @success_color;
+}
+
+.helios-plan-marker-active {
+    background-color: @accent_color;
+    box-shadow: 0 0 0 0 alpha(@accent_color, 0.38);
+    animation: helios-plan-pulse 1500ms cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.helios-plan-marker-blocked {
+    background-color: @warning_color;
+}
+
+.helios-plan-marker-interrupted {
+    background-color: alpha(@view_fg_color, 0.52);
+}
+
+@keyframes helios-plan-pulse {
+    0%, 100% {
+        opacity: 1;
+        box-shadow: 0 0 0 0 alpha(@accent_color, 0.38);
+    }
+    50% {
+        opacity: 0.72;
+        box-shadow: 0 0 0 5px alpha(@accent_color, 0);
+    }
+}
+
+.helios-plan-detail {
+    border-left: 2px solid alpha(@accent_color, 0.45);
+    padding-left: 10px;
+    font-size: 9.5pt;
+}
+
+.helios-plan-step {
+    border-radius: 8px;
+    padding: 7px 8px;
+    background-color: alpha(@view_fg_color, 0.035);
+}
+
+.helios-plan-step-active {
+    background-color: alpha(@accent_color, 0.12);
+}
+
+.helios-plan-step-done {
+    color: alpha(@view_fg_color, 0.72);
+}
+
+.helios-plan-step-blocked {
+    color: @warning_color;
+    background-color: alpha(@warning_color, 0.10);
+}
+
+.helios-plan-step-interrupted {
+    color: alpha(@view_fg_color, 0.72);
+    background-color: alpha(@view_fg_color, 0.07);
+}
+
+.helios-plan-step-dropped {
+    color: alpha(@view_fg_color, 0.62);
+    opacity: 0.78;
+}
+
+.helios-plan-insight {
+    border-radius: 8px;
+    padding: 7px 8px;
+    background-color: alpha(@view_fg_color, 0.035);
+}
+
+.helios-plan-insight-marker {
+    min-width: 9px;
+    min-height: 9px;
+    border-radius: 100%;
+    margin-top: 4px;
+    background-color: alpha(@view_fg_color, 0.35);
+}
+
+.helios-plan-insight-marker-ok {
+    background-color: @success_color;
+}
+
+.helios-plan-insight-marker-warn {
+    background-color: @warning_color;
+}
+
+.helios-plan-insight-marker-error {
+    background-color: @error_color;
+}
+
+.helios-plan-insight-warn {
+    background-color: alpha(@warning_color, 0.08);
+}
+
+.helios-plan-insight-error {
+    background-color: alpha(@error_color, 0.08);
+}
+
+
+/* ── Missions pane ────────────────────────────────────────────── */
+
+.helios-mission-pane {
+    background-color: @sidebar_bg_color;
+}
+
+.helios-mission-goal {
+    font-weight: bold;
+}
+
+.helios-mission-gate-banner {
+    border-radius: 8px;
+    padding: 10px;
+    background-color: alpha(@warning_color, 0.12);
+}
+
+.helios-mission-phase {
+    border-radius: 8px;
+    padding: 8px;
+}
+
+.helios-mission-marker {
+    min-width: 12px;
+    min-height: 12px;
+    border-radius: 100%;
+    background-color: alpha(@view_fg_color, 0.24);
+}
+
+/* Reuse the same semantic-color tiers as the session status dots
+ * (helios-status-dot, above) so "done"/"running"/"failed" read consistently
+ * across the whole app rather than inventing a second palette. */
+.helios-mission-marker-done {
+    background-color: @success_color;
+}
+
+.helios-mission-marker-running {
+    background-color: @helios_working;
+    box-shadow: 0 0 8px alpha(@helios_working, 0.55);
+    animation: helios-dot-blink-working 1800ms cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.helios-mission-marker-gated {
+    background-color: @warning_color;
+}
+
+.helios-mission-marker-failed {
+    background-color: @error_color;
+}
+
+/* Quota stops (G3: status=failed + note "quota: ...") are distinct from a
+ * real failure — resumable, not broken — so they get the accent rather than
+ * sharing the error red. @accent_color, not a pinned brand color: this marker
+ * is a bare Gtk.Box with no text, so it takes the same solid-fill treatment as
+ * its @success_color / @warning_color / @error_color siblings above and follows
+ * the user's system accent with them. */
+.helios-mission-marker-quota {
+    background-color: @accent_color;
+}
+
+.helios-mission-marker-pending,
+.helios-mission-marker-aborted {
+    background-color: alpha(@view_fg_color, 0.25);
+}
+
+.helios-mission-badge-gate {
+    border-radius: 6px;
+    padding: 0px 6px;
+    background-color: alpha(@warning_color, 0.18);
+}
+
+.helios-mission-slice {
+    border-radius: 8px;
+    padding: 7px 8px;
+    background-color: alpha(@view_fg_color, 0.035);
+}
+
+.helios-mission-verdict-clean {
+    color: @success_color;
+}
+
+.helios-mission-verdict-findings {
+    color: @warning_color;
+}
+
+.helios-mission-verdict-escalate {
+    color: @error_color;
+    font-weight: bold;
+}
+
+.helios-mission-artifact-chip {
+    font-size: 8.5pt;
+    padding: 2px 8px;
+}
+
+
+/* ── Sidebar rows: rich hover + selection transitions ────────── */
+
+.helios-session-row {
+    border-radius: 10px;
+    margin: 1px 6px;
+    padding: 1px;
+    transition:
+        background-color 220ms cubic-bezier(0.4, 0, 0.2, 1),
+        box-shadow 240ms cubic-bezier(0.4, 0, 0.2, 1),
+        color 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.helios-session-row:hover {
+    background-color: alpha(@accent_color, 0.09);
+}
+
+.helios-session-row:selected,
+.helios-context-row:selected {
+    background-color: alpha(@accent_color, 0.18);
+    /* NOT @accent_fg_color: libadwaita defines that as #ffffff in BOTH palettes
+       because it pairs with a SOLID @accent_bg_color fill. Over an 18% wash it
+       lands near 1.5:1 in the light theme. The inset accent rail below already
+       carries the selected state. */
+    color: @view_fg_color;
+    /* Accent rail on the leading edge marks the current item; it fades in via
+       the box-shadow transition above. */
+    box-shadow: inset 3px 0 0 0 @accent_color;
+}
+
+.helios-session-row:selected:hover {
+    background-color: alpha(@accent_color, 0.24);
+}
+
+.helios-context-group {
+    padding: 0;
+    background: transparent;
+}
+
+.helios-context-missing {
+    opacity: 0.55;
+}
+
+
+.helios-size-label {
+    font-size: 8.5pt;
+    opacity: 0.7;
+}
+
+
+/* ── Session status dots ───────────────────────────────────────── */
+
+.helios-status-dot {
+    min-width: 8px;
+    min-height: 8px;
+    border-radius: 100%;
+    background-color: alpha(@view_fg_color, 0.25);
+    transition: background-color 240ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* The palette, as one sentence per state:
+ *
+ *   purple + blink   WORKING   — running a turn right now
+ *   green            READY     — the last turn completed; process still alive
+ *   green, muted     IDLE      — the last turn completed; nothing running
+ *   amber  + blink   AWAITING  — stopped mid-turn, nothing is coming
+ *   amber ring+blink QUESTION  — it asked YOU something
+ *   red    + blink   ERRORED   — the last action came back an error
+ *
+ * Green used to mean WORKING. That is the confusion this palette fixes: green
+ * reads as "this one is fine", which is the opposite of "do not touch it, it
+ * is mid-turn", and it left nothing at all to say "done". Green now means
+ * exactly one thing — the last turn finished — and the two shades separate a
+ * live process from a dormant one without inventing a second hue.
+ *
+ * Steady vs blinking is the second channel, and it is deliberately not
+ * decoration: a settled state holds still, anything in motion or wanting you
+ * blinks. That survives greyscale and colour-blindness, where hue does not.
+ * The blink is opacity + glow together — glow alone was invisible against a
+ * bright wallpaper once the sidebar went translucent.
+ *
+ * Everything except WORKING still sources from libadwaita's semantic palette
+ * so high-contrast themes get their own colours rather than fighting hardcoded
+ * iOS tints; see @helios_working at the top of the file for why that one is
+ * fixed. */
+.helios-status-dot.helios-status-working {
+    background-color: @helios_working;
+    box-shadow: 0 0 8px alpha(@helios_working, 0.55);
+    animation: helios-dot-blink-working 1800ms cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* READY — the turn finished and the process is still alive, waiting for the
+ * next message. Solid green with a faint *static* halo: the halo says "still
+ * loaded", the stillness says "not busy". */
+.helios-status-dot.helios-status-ready {
+    background-color: @success_color;
+    box-shadow: 0 0 5px alpha(@success_color, 0.40);
+}
+
+/* IDLE — same "complete", no process behind it. Muted rather than a different
+ * hue, because a sidebar of fifty finished sessions at full saturation is a
+ * christmas tree and the eye stops reading any of them. */
+.helios-status-dot.helios-status-idle {
+    background-color: alpha(@success_color, 0.45);
+}
+
+/* AWAITING — the last thing in the transcript is a user message with no reply
+ * and nothing running: interrupted, stopped, or wedged. Nothing is coming
+ * unless you do something, so it blinks. */
+.helios-status-dot.helios-status-awaiting {
+    background-color: @warning_color;
+    box-shadow: 0 0 8px alpha(@warning_color, 0.55);
+    animation: helios-dot-blink-warning 2200ms cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* NEEDS YOU — a background session asked a question and is waiting on your
+ * answer. Same amber as AWAITING (both mean "you are the blocker") and told
+ * apart by SHAPE, a ring rather than a disc — colour alone cannot separate
+ * them, and reduced motion takes the animation away. Overrides the
+ * disk-derived state. */
+.helios-status-dot.helios-status-question {
+    background-color: transparent;
+    box-shadow:
+        inset 0 0 0 3px @warning_color,
+        0 0 8px alpha(@warning_color, 0.60);
+    animation: helios-question-dot-glow 2200ms cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.helios-status-dot.helios-status-errored {
+    background-color: @error_color;
+    box-shadow: 0 0 8px alpha(@error_color, 0.55);
+    animation: helios-dot-blink-error 2200ms cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Inline per-row delete button — dim until you hover (or keyboard-focus) the
+ * row, then it brightens to a clear destructive red. Always clickable; the
+ * opacity is purely visual de-emphasis so the list stays calm at rest. */
+.helios-row-delete {
+    opacity: 0;
+    min-width: 24px;
+    min-height: 24px;
+    padding: 2px;
+    transition: opacity 140ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.helios-session-row:hover .helios-row-delete,
+.helios-session-row:focus-within .helios-row-delete {
+    opacity: 0.65;
+}
+
+.helios-session-row .helios-row-delete:hover {
+    opacity: 1;
+    color: @error_color;
+}
+
+/* One blink per colour. `alpha()` cannot take a variable hue, so a shared
+ * keyframe would pulse every dot in whatever colour was baked into it — which
+ * is exactly the bug the old amber twin was written to work around, back when
+ * there was one green set. Now that three states blink, they are spelled out
+ * rather than shared.
+ *
+ * Opacity AND glow, not glow alone: the sidebar can be translucent over a
+ * bright wallpaper, where a box-shadow halo washes out completely and the
+ * "blink" the user was promised does not happen. 0.45 is a breath, not a
+ * strobe — the dots sit in peripheral vision for hours. */
+@keyframes helios-dot-blink-working {
+    0%, 100% {
+        opacity: 1;
+        box-shadow: 0 0 6px alpha(@helios_working, 0.40);
+    }
+    50% {
+        opacity: 0.45;
+        box-shadow: 0 0 14px alpha(@helios_working, 0.85);
+    }
+}
+
+@keyframes helios-dot-blink-warning {
+    0%, 100% {
+        opacity: 1;
+        box-shadow: 0 0 6px alpha(@warning_color, 0.45);
+    }
+    50% {
+        opacity: 0.45;
+        box-shadow: 0 0 14px alpha(@warning_color, 0.90);
+    }
+}
+
+@keyframes helios-dot-blink-error {
+    0%, 100% {
+        opacity: 1;
+        box-shadow: 0 0 6px alpha(@error_color, 0.45);
+    }
+    50% {
+        opacity: 0.45;
+        box-shadow: 0 0 14px alpha(@error_color, 0.90);
+    }
+}
+
+/* The question dot's fill is `transparent` — its disc IS an inset box-shadow —
+ * so this one animates the glow only. Blinking its opacity would fade the ring
+ * itself out, taking the shape channel with it. */
+@keyframes helios-question-dot-glow {
+    0%, 100% {
+        box-shadow:
+            inset 0 0 0 3px @warning_color,
+            0 0 6px alpha(@warning_color, 0.45);
+    }
+    50% {
+        box-shadow:
+            inset 0 0 0 3px @warning_color,
+            0 0 14px alpha(@warning_color, 0.90);
+    }
+}
+
+
+/* ── Banner above transcript ──────────────────────────────────── */
+
+.helios-banner {
+    border-bottom: 1px solid @borders;
+    padding-bottom: 10px;
+}
+
+
+/* ── Message bubbles ──────────────────────────────────────────── */
+
+.helios-bubble {
+    margin: 4px 0;
+}
+
+/* Fresh live messages fade in once. Opacity-only — no layout shift, so the
+   sticky-bottom scroll is unaffected. Applied via .helios-bubble-enter only to
+   newly-arrived bubbles (not bulk-loaded history or the streaming bubble). */
+@keyframes helios-bubble-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+.helios-bubble-enter {
+    animation: helios-bubble-in 260ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.helios-window.reduced-motion .helios-bubble-enter {
+    animation: none;
+}
+
+.helios-bubble-body {
+    border-radius: 12px;
+    padding: 12px 14px;
+    transition:
+        background-color 220ms cubic-bezier(0.4, 0, 0.2, 1),
+        border-color 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.helios-bubble-body-user {
+    background-color: alpha(@accent_color, 0.10);
+    border: 1px solid alpha(@accent_color, 0.20);
+}
+
+.helios-bubble-body-assistant {
+    background-color: @card_bg_color;
+    border: 1px solid @borders;
+}
+
+.helios-bubble-body-system {
+    background-color: alpha(@warning_color, 0.08);
+    border: 1px solid alpha(@warning_color, 0.15);
+}
+
+/* A-7: a provider failure gets a durable, selectable row instead of a
+   four-second toast. */
+.helios-bubble-body-error {
+    background-color: alpha(@error_color, 0.08);
+    border: 1px solid alpha(@error_color, 0.25);
+}
+
+/* Hook lifecycle notice (blocked/asked/failed) — same treatment as
+   .helios-bubble-body-system above; it is the same kind of compact meta
+   row, just sourced from a hook record instead of a system message. */
+.helios-bubble-body-hook {
+    background-color: alpha(@warning_color, 0.08);
+    border: 1px solid alpha(@warning_color, 0.15);
+}
+
+.helios-role-user {
+    color: @accent_color;
+    font-weight: 600;
+}
+
+.helios-role-assistant {
+    color: @view_fg_color;
+    font-weight: 600;
+}
+
+.helios-role-system {
+    color: @warning_color;
+    font-weight: 600;
+}
+
+.helios-role-error {
+    color: @error_color;
+    font-weight: 600;
+}
+
+.helios-role-hook {
+    color: @warning_color;
+    font-weight: 600;
+}
+
+/* ── Commentary / work updates (public OpenAI progress) ───────── */
+
+/* Visible but lightweight: a subtle left accent + slightly dimmed body keeps
+   professional progress narration in view without competing with the final
+   answer for prominence. */
+.helios-commentary {
+    border-left: 2px solid alpha(@accent_color, 0.35);
+    padding-left: 8px;
+    opacity: 0.88;
+}
+
+/* ── Tool + reasoning lanes ───────────────────────────────────── */
+/* Same visual family as .helios-commentary above: a thin left rail marks the
+   lane, a dimmed body keeps machine detail behind the prose. Applied from
+   message_bubble.py; every class here has a Python caller. */
+
+.helios-tool-use {
+    border-left: 2px solid alpha(@view_fg_color, 0.22);
+    padding-left: 8px;
+    opacity: 0.88;
+}
+
+.helios-tool-result {
+    border-left: 2px solid alpha(@view_fg_color, 0.14);
+    padding-left: 8px;
+    margin-left: 10px;   /* result rows sit under their invocation */
+    opacity: 0.82;
+}
+
+/* After .helios-tool-result on purpose: both land on the same expander
+   (message_bubble.py:910 then :912) at equal specificity, so order decides. */
+.helios-tool-error {
+    border-left: 2px solid @error_color;
+    opacity: 1;
+}
+
+/* One card per tool call. The title carries the invocation (same 0.9em the
+   plain expander label gets below — the card's label is a box, so `> label`
+   no longer reaches it) and the chip carries the lifecycle, so a failure is
+   legible without opening anything. */
+.helios-tool-card-title {
+    font-size: 0.9em;
+}
+
+.helios-tool-state {
+    font-size: 0.72em;
+    font-weight: 700;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background-color: alpha(@view_fg_color, 0.08);
+    color: @view_fg_color;
+}
+
+.helios-tool-state-running {
+    background-color: alpha(@accent_color, 0.15);
+    color: @accent_color;
+}
+
+.helios-tool-state-done {
+    opacity: 0.7;
+}
+
+.helios-tool-state-error {
+    background-color: alpha(@error_color, 0.18);
+    color: @error_color;
+}
+
+/* "Files changed: a.py, b.py" — the turn's footer, quieter than its prose. */
+.helios-files-changed {
+    margin-top: 2px;
+    opacity: 0.85;
+}
+
+.helios-thinking {
+    border-left: 2px solid alpha(@view_fg_color, 0.18);
+    padding-left: 8px;
+    opacity: 0.78;
+}
+
+.helios-reasoning {
+    border-left: 2px solid alpha(@accent_color, 0.22);
+    padding-left: 8px;
+    opacity: 0.82;
+}
+
+.helios-tool-use > label,
+.helios-tool-result > label,
+.helios-thinking > label,
+.helios-reasoning > label {
+    font-size: 0.9em;
+}
+
+/* ── Queued messages (typed while a turn was in flight) ───────── */
+
+.helios-bubble-queued .helios-bubble-body {
+    opacity: 0.72;
+    border-style: dashed;
+}
+
+.helios-queued-pill {
+    font-size: 0.72em;
+    font-weight: 700;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background-color: alpha(@accent_color, 0.15);
+    color: @accent_color;
+}
+
+.helios-queued-remove {
+    opacity: 0.55;
+    transition: opacity 140ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.helios-queued-remove:hover {
+    opacity: 1;
+}
+
+/* ── Transcript bulk-load reveal ────────────────────────── */
+
+/* Hidden while a session's history batches in + the landing scroll
+   converges; revealed in one piece, already parked at the bottom. The
+   transition only animates the reveal (opacity 0 → 1). */
+.helios-transcript-list {
+    transition: opacity 170ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.helios-transcript-list.helios-loading {
+    transition: none;
+    opacity: 0;
+}
+
+
+/* ── Activity indicator strip ────────────────────────────────── */
+
+.helios-activity {
+    background-color: alpha(@view_fg_color, 0.05);
+    border: 1px solid alpha(@view_fg_color, 0.08);
+    border-radius: 999px;
+    padding: 6px 14px;
+    transition:
+        background-color 220ms cubic-bezier(0.4, 0, 0.2, 1),
+        border-color 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.helios-activity-title {
+    font-weight: 600;
+    font-size: 10pt;
+}
+
+.helios-activity-detail {
+    font-size: 10pt;
+    font-family: monospace;
+}
+
+.helios-activity-icon {
+    color: @accent_color;
+}
+
+/* Retrying is not progress. The icon goes amber so a retry storm is visually
+   distinct from ordinary tool work in the same slot — @warning_color, the
+   same token every other "you are waiting on something" state uses. */
+.helios-activity-icon.helios-activity-warn {
+    color: @warning_color;
+}
+
+/* The pulsing dot — Apple Music / iOS-style "in progress" indicator.
+   A faint expanding halo (box-shadow) rides on top of the opacity pulse so
+   the dot reads as alive even in peripheral vision. */
+.helios-pulse-dot {
+    min-width: 8px;
+    min-height: 8px;
+    border-radius: 100%;
+    background-color: @accent_color;
+    animation: helios-pulse 1400ms cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes helios-pulse {
+    0%, 100% {
+        opacity: 1;
+        background-color: @accent_color;
+        box-shadow: 0 0 0 0 alpha(@accent_color, 0.35);
+    }
+    50% {
+        opacity: 0.45;
+        background-color: alpha(@accent_color, 0.8);
+        box-shadow: 0 0 0 4px alpha(@accent_color, 0);
+    }
+}
+
+/* Soft breathing on the title while Thinking/Responding — text-only, no
+   layout shift. Slightly out of phase with the dot so the strip doesn't
+   blink as one rigid unit. */
+.helios-activity-breathe {
+    animation: helios-title-breathe 2800ms ease-in-out infinite;
+}
+
+@keyframes helios-title-breathe {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+}
+
+/* Right-aligned live metrics: elapsed · ~tokens · Esc hint. */
+.helios-activity-metrics {
+    font-size: 9pt;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Observed agent dock ────────────────────────────────────── */
+
+.helios-agent-dock {
+    background-color: alpha(@view_fg_color, 0.045);
+    border: 1px solid alpha(@view_fg_color, 0.09);
+    border-radius: 12px;
+    transition:
+        background-color 220ms cubic-bezier(0.4, 0, 0.2, 1),
+        border-color 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.helios-agent-dock-summary {
+    border-radius: 11px;
+    padding: 6px 10px;
+}
+
+.helios-agent-dock-summary:hover,
+.helios-agent-dock-summary:checked {
+    background-color: alpha(@accent_color, 0.08);
+}
+
+.helios-agent-aggregate-icon {
+    color: @accent_color;
+}
+
+/* One aggregate pulse communicates concurrent work without making every
+   child node blink independently. */
+.helios-agent-running-pulse {
+    animation: helios-agent-shared-pulse 2200ms cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes helios-agent-shared-pulse {
+    0% {
+        opacity: 1;
+        color: @accent_color;
+    }
+    50% {
+        opacity: 0.52;
+        color: alpha(@accent_color, 0.78);
+    }
+    100% {
+        opacity: 1;
+        color: @accent_color;
+    }
+}
+
+.helios-agent-node {
+    min-width: 10px;
+    min-height: 10px;
+    border-radius: 3px;
+    background-color: alpha(@view_fg_color, 0.30);
+    box-shadow: inset 0 0 0 1px alpha(@view_fg_color, 0.10);
+    transition:
+        background-color 180ms cubic-bezier(0.4, 0, 0.2, 1),
+        box-shadow 180ms cubic-bezier(0.4, 0, 0.2, 1),
+        opacity 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* RUNNING — the child has actually emitted content under its parent tool_use
+   id. Same @helios_working as the session dots and the mission markers: this
+   is the same fact ("something is working") and the app states it in one
+   colour. The other four node states already sourced from the semantic
+   palette; only this one was on @accent_color, which meant a fan-out's live
+   agents changed hue with the user's system accent while every other
+   working-indicator in the window did not. */
+.helios-agent-node.helios-agent-running {
+    background-color: @helios_working;
+}
+
+/* STARTING — provider-proven that delegation was REQUESTED, with nothing yet
+   observed from the child. The model keeps that distinct from running on
+   purpose (it is the only honest reading of a tool_use with no child stream
+   behind it), and it is the state that means "this one may be wedged" — so it
+   cannot share a swatch with running. Hollow rather than a fifth hue: same
+   fill/ring trick as the question dot, so the difference survives greyscale
+   and needs no animation to read. */
+.helios-agent-node.helios-agent-starting {
+    background-color: transparent;
+    box-shadow: inset 0 0 0 2px @helios_working;
+}
+
+.helios-agent-node.helios-agent-needs_input {
+    background-color: @warning_color;
+}
+
+.helios-agent-node.helios-agent-completed {
+    background-color: @success_color;
+}
+
+.helios-agent-node.helios-agent-failed {
+    background-color: @error_color;
+}
+
+.helios-agent-node.helios-agent-stopped {
+    background-color: alpha(@view_fg_color, 0.46);
+}
+
+@keyframes helios-agent-terminal-in {
+    0% {
+        opacity: 0.45;
+        box-shadow: 0 0 0 0 alpha(@accent_color, 0.34);
+    }
+    55% {
+        opacity: 1;
+        box-shadow: 0 0 0 4px alpha(@accent_color, 0.08);
+    }
+    100% {
+        opacity: 1;
+        box-shadow: 0 0 0 0 alpha(@accent_color, 0);
+    }
+}
+
+.helios-agent-terminal-arrival {
+    animation: helios-agent-terminal-in 440ms cubic-bezier(0.4, 0, 0.2, 1) 1;
+}
+
+.helios-agent-dock-details {
+    border-top: 1px solid alpha(@view_fg_color, 0.08);
+    padding: 8px 10px 10px 10px;
+}
+
+.helios-agent-group-heading {
+    margin-top: 2px;
+}
+
+.helios-agent-detail-row {
+    border-radius: 8px;
+    padding: 6px 8px;
+    background-color: alpha(@view_fg_color, 0.035);
+}
+
+.helios-agent-detail-icon {
+    color: alpha(@view_fg_color, 0.72);
+}
+
+/* The duration under each status, redrawn once a second. tabular-nums for the
+   same reason .helios-activity-metrics has it: proportional digits change
+   width as they tick, so a right-aligned "9s" -> "10s" -> "11s" wobbles the
+   whole column. Same treatment, same problem. */
+.helios-agent-stop {
+    min-width: 22px;
+    min-height: 22px;
+    padding: 0;
+    opacity: 0.75;
+}
+.helios-agent-stop:hover {
+    opacity: 1;
+}
+
+.helios-agent-elapsed {
+    font-variant-numeric: tabular-nums;
+}
+
+.helios-agent-detail-needs_input .helios-agent-detail-icon,
+.helios-agent-detail-needs_input .helios-agent-status-text {
+    color: @warning_color;
+}
+
+.helios-agent-detail-completed .helios-agent-detail-icon,
+.helios-agent-detail-completed .helios-agent-status-text {
+    color: @success_color;
+}
+
+.helios-agent-detail-failed .helios-agent-detail-icon,
+.helios-agent-detail-failed .helios-agent-status-text {
+    color: @error_color;
+}
+
+.helios-agent-detail-stopped .helios-agent-detail-icon,
+.helios-agent-detail-stopped .helios-agent-status-text {
+    /* 0.70, not 0.65: 0.65 measured 4.29:1 in the light theme — a marginal AA
+       fail for status text a user has to read. Same floor as .helios-bullet. */
+    color: alpha(@view_fg_color, 0.70);
+}
+
+/* ── Goal strip ─────────────────────────────────────────────── */
+
+.helios-goal {
+    background-color: alpha(@accent_color, 0.08);
+    border: 1px solid alpha(@accent_color, 0.16);
+    border-radius: 10px;
+    padding: 5px 8px;
+}
+
+.helios-goal-status,
+.helios-goal-progress {
+    color: @accent_color;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.helios-goal-progress {
+    min-width: 34px;
+}
+
+.helios-goal-action {
+    min-width: 26px;
+    min-height: 26px;
+    padding: 2px;
+}
+
+.helios-goal-action:hover {
+    background-color: alpha(@accent_color, 0.12);
+}
+
+/* Durable provider-owned execution plan. Kept visually distinct from the
+   user-owned Goal strip immediately above it. */
+.helios-execution-plan {
+    background-color: alpha(@view_fg_color, 0.045);
+    border: 1px solid alpha(@view_fg_color, 0.10);
+    border-radius: 10px;
+    padding: 5px 8px;
+}
+
+button:hover .helios-execution-plan {
+    background-color: alpha(@accent_color, 0.08);
+    border-color: alpha(@accent_color, 0.18);
+}
+
+.helios-execution-plan-progress {
+    color: @accent_color;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Header Work indicator (tandem participants + lead). */
+.helios-work-popover contents {
+    border-radius: 12px;
+    padding: 0;
+}
+.helios-work-role-lead {
+    color: @accent_color;
+    font-weight: 700;
+}
+
+
+/* ── Code blocks (GtkSourceView5) ────────────────────────────── */
+
+.helios-codeblock {
+    background-color: @view_bg_color;
+    border: 1px solid @borders;
+    border-radius: 10px;
+    margin: 6px 0;
+}
+
+.helios-codeblock-header {
+    background-color: alpha(@view_fg_color, 0.04);
+    border-bottom: 1px solid @borders;
+}
+
+.helios-codeview {
+    background: transparent;
+}
+
+.helios-codeview text {
+    background: transparent;
+    font-size: 10pt;
+}
+
+
+/* ── Markdown polish ─────────────────────────────────────────── */
+
+.helios-bullet {
+    /* 0.70, not 0.55: at 0.55 this measured 3.26:1 against @view_bg_color in
+       the light theme, under the 4.5:1 AA floor (dark was fine at 5.93:1).
+       0.70 gives 4.97:1 light / 8.78:1 dark and still reads de-emphasised.
+       AA is reached at 0.67; the extra 0.03 is margin, not taste. */
+    color: alpha(@view_fg_color, 0.70);
+    min-width: 18px;
+}
+
+.helios-blockquote {
+    border-left: 3px solid alpha(@accent_color, 0.4);
+    padding-left: 12px;
+    color: alpha(@view_fg_color, 0.85);
+    font-style: italic;
+}
+
+
+/* ── Composer ────────────────────────────────────────────────── */
+
+.helios-composer-wrapper {
+    background-color: transparent;
+}
+
+.helios-composer-card {
+    background-color: @card_bg_color;
+    border: 1px solid @borders;
+    border-radius: 14px;
+    box-shadow: 0 1px 3px alpha(black, 0.06);
+    transition:
+        border-color 220ms cubic-bezier(0.4, 0, 0.2, 1),
+        box-shadow 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.helios-composer-card:focus-within {
+    border-color: alpha(@accent_color, 0.55);
+    box-shadow: 0 2px 8px alpha(@accent_color, 0.22);
+}
+
+.helios-composer-text text {
+    background: transparent;
+    font-size: 11pt;
+}
+
+.helios-composer-placeholder {
+    font-size: 11pt;
+}
+
+/* Causal send acknowledgement. The 160ms duration is the single compact
+ * token mirrored by SEND_ACCEPTANCE_ACK_MS in Composer; GTK CSS has no custom
+ * time properties. MainWindow adds this class only after durable acceptance. */
+.helios-send-button.helios-send-accepted {
+    animation: helios-send-accepted 160ms cubic-bezier(0.4, 0, 0.2, 1) 1;
+}
+
+@keyframes helios-send-accepted {
+    0% {
+        box-shadow: 0 0 0 0 alpha(@success_color, 0.38);
+    }
+    55% {
+        box-shadow: 0 0 0 4px alpha(@success_color, 0.30);
+    }
+    100% {
+        box-shadow: 0 0 0 7px alpha(@success_color, 0);
+    }
+}
+
+/* Slash-command completion, anchored to the composer's TextView. It never
+ * takes focus (see SlashPopover), so it only has to read as a compact list. */
+.helios-slash-popover contents {
+    border-radius: 12px;
+    padding: 2px;
+}
+
+.helios-slash-source {
+    background-color: alpha(@view_fg_color, 0.08);
+    border-radius: 6px;
+    padding: 1px 6px;
+    opacity: 0.75;
+}
+
+
+/* ── Chat toolbar ────────────────────────────────────────────── */
+
+.helios-chat-toolbar {
+    padding: 4px 0;
+}
+
+.helios-chat-toolbar button {
+    transition:
+        background-color 220ms cubic-bezier(0.4, 0, 0.2, 1),
+        color 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.helios-chat-toolbar button:hover {
+    background-color: alpha(@accent_color, 0.08);
+}
+
+.helios-model-popover contents,
+.helios-effort-popover contents,
+.helios-execution-popover contents {
+    border-radius: 14px;
+    padding: 2px;
+}
+
+.helios-execution-button .helios-execution-divider {
+    margin-left: 1px;
+    margin-right: 1px;
+}
+
+.helios-execution-popover .helios-execution-scope {
+    color: alpha(currentColor, 0.68);
+}
+
+.helios-execution-popover .helios-permission-list {
+    margin-top: 2px;
+}
+
+.helios-execution-popover .helios-permission-option {
+    border-radius: 9px;
+    padding: 6px 8px;
+    transition:
+        background-color 180ms cubic-bezier(0.4, 0, 0.2, 1),
+        box-shadow 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.helios-execution-popover .helios-permission-option:hover {
+    background-color: alpha(@accent_color, 0.09);
+}
+
+.helios-execution-popover .helios-permission-option-selected {
+    background-color: alpha(@accent_color, 0.13);
+    box-shadow: inset 2px 0 0 0 alpha(@accent_color, 0.72);
+}
+
+.helios-execution-popover .helios-permission-option-selected:hover {
+    background-color: alpha(@accent_color, 0.18);
+}
+
+.helios-execution-popover .helios-permission-option-bypass {
+    background-color: alpha(@warning_color, 0.07);
+}
+
+.helios-execution-popover .helios-permission-option-bypass:hover {
+    background-color: alpha(@warning_color, 0.13);
+}
+
+.helios-execution-popover .helios-permission-option-bypass.helios-permission-option-selected {
+    background-color: alpha(@warning_color, 0.16);
+    box-shadow: inset 2px 0 0 0 @warning_color;
+}
+
+.helios-execution-bypass {
+    color: @warning_color;
+}
+
+.helios-model-popover button {
+    border-radius: 8px;
+    padding: 6px 10px;
+    transition: background-color 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.helios-model-popover button:hover {
+    background-color: alpha(@accent_color, 0.10);
+}
+
+
+/* ── Generic button/toggle hover smoothing ───────────────────── */
+
+headerbar button,
+headerbar togglebutton {
+    transition:
+        background-color 200ms cubic-bezier(0.4, 0, 0.2, 1),
+        box-shadow 200ms cubic-bezier(0.4, 0, 0.2, 1),
+        color 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Engaged panel toggles read clearly as "on" with an accent wash. */
+headerbar togglebutton:checked {
+    background-color: alpha(@accent_color, 0.18);
+    color: @accent_color;
+}
+
+headerbar togglebutton:checked:hover {
+    background-color: alpha(@accent_color, 0.26);
+}
+
+/* Tactile press feedback. GTK4 CSS can't scale widgets, so we deepen the
+   wash on :active to give a clear "pressed" beat instead. */
+headerbar button:active,
+headerbar togglebutton:active,
+.helios-chat-toolbar button:active,
+.helios-model-popover button:active {
+    background-color: alpha(@accent_color, 0.30);
+}
+
+
+/* ── New-chat agent chooser ─────────────────────────────────── */
+
+.helios-new-chat-popover contents {
+    border-radius: 14px;
+    padding: 0;
+}
+
+.helios-new-chat-popover button {
+    border-radius: 8px;
+    padding: 4px 8px;
+}
+
+.helios-new-chat-popover button:hover {
+    background-color: alpha(@accent_color, 0.10);
+}
+
+
+/* ── Transcript background ───────────────────────────────────── */
+
+.helios-transcript {
+    background-color: @window_bg_color;
+}
+
+
+/* ── Context-meter hover popover ─────────────────────────────── */
+
+.helios-context-popover contents {
+    border-radius: 16px;
+    padding: 0;
+}
+
+/* ── Rate-limit status dots (mini variant used inside the popover) ── */
+
+.helios-status-dot.helios-rate-ok {
+    background-color: @success_color;
+}
+.helios-status-dot.helios-rate-warn {
+    background-color: @warning_color;
+}
+.helios-status-dot.helios-rate-error {
+    background-color: @error_color;
+}
+
+
+/* ── Select-mode action bar ──────────────────────────────────── */
+
+.helios-action-bar {
+    background-color: alpha(@view_fg_color, 0.04);
+    border-top: 1px solid alpha(@view_fg_color, 0.08);
+    border-radius: 0;
+    padding: 4px 0;
+}
+
+
+/* ── Paned drag handle polish ────────────────────────────────── */
+
+paned > separator {
+    background-color: alpha(@view_fg_color, 0.05);
+    min-width: 4px;
+    transition: background-color 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+paned > separator:hover {
+    background-color: alpha(@accent_color, 0.25);
+}
+
+
+/* ── Reduced motion ──────────────────────────────────────────── */
+/*
+ * GTK Settings::gtk-enable-animations is set by GNOME's accessibility
+ * Animations toggle. When it's off, MainWindow flips a `.reduced-motion`
+ * class onto the window. Both keyframe loops opt out (the activity-strip
+ * dot and the active-session glow); other transitions are short enough
+ * to leave alone.
+ */
+
+/* Blanket: no keyframe animation survives reduced motion. The rules below
+   do NOT repeat `animation: none` — they exist to restore the resting
+   appearance (opacity, a static box-shadow) that the killed animation was
+   providing. Adding a new .helios-* keyframe needs no edit here; adding one
+   whose resting state looks wrong does. */
+.helios-window.reduced-motion * { animation: none; }
+
+.helios-window.reduced-motion .helios-pulse-dot {
+    animation: none;
+    opacity: 1;
+    box-shadow: none;
+}
+
+.helios-window.reduced-motion .helios-activity-breathe {
+    animation: none;
+    opacity: 1;
+}
+
+.helios-window.reduced-motion .helios-agent-running-pulse,
+.helios-window.reduced-motion .helios-agent-terminal-arrival {
+    animation: none;
+    opacity: 1;
+    box-shadow: none;
+}
+
+/* The three blinking dots animate `opacity`, so their resting state has to be
+   restated here or the blanket leaves them wherever the killed keyframe had
+   them. `opacity: 1` is the load-bearing declaration; the box-shadow just
+   keeps the halo at its mid value. */
+.helios-window.reduced-motion .helios-status-dot.helios-status-working {
+    animation: none;
+    opacity: 1;
+    box-shadow: 0 0 6px alpha(@helios_working, 0.55);
+}
+
+.helios-window.reduced-motion .helios-status-dot.helios-status-awaiting {
+    animation: none;
+    opacity: 1;
+    box-shadow: 0 0 6px alpha(@warning_color, 0.55);
+}
+
+.helios-window.reduced-motion .helios-status-dot.helios-status-errored {
+    animation: none;
+    opacity: 1;
+    box-shadow: 0 0 6px alpha(@error_color, 0.55);
+}
+
+/* Amber disc vs amber ring is all that separates AWAITING from QUESTION once
+   the blink is gone, so the ring has to be restated. */
+.helios-window.reduced-motion .helios-status-dot.helios-status-question {
+    animation: none;
+    box-shadow:
+        inset 0 0 0 3px @warning_color,
+        0 0 6px alpha(@warning_color, 0.60);
+}
+
+.helios-window.reduced-motion .helios-plan-marker-active {
+    animation: none;
+    box-shadow: 0 0 5px alpha(@accent_color, 0.45);
+}
+
+.helios-window.reduced-motion .helios-send-button.helios-send-accepted {
+    animation: none;
+    box-shadow: 0 0 0 2px alpha(@success_color, 0.55);
+}
+
+
+/* ── Focus rings (keyboard nav) ──────────────────────────────── */
+/*
+ * Hover-only :hover styles can hide the default libadwaita focus ring
+ * during keyboard nav. Re-state focus visibility explicitly on rows and
+ * the composer card so Tab / Shift+Tab is always visible.
+ */
+
+.helios-session-row:focus-visible,
+.helios-context-row:focus-visible {
+    outline: 2px solid alpha(@accent_color, 0.55);
+    outline-offset: -2px;
+}
+
+.helios-composer-card:focus-within {
+    /* Already styled; this rule just makes the keyboard focus state
+       visually distinct from mouse hover. */
+    outline: 1px solid alpha(@accent_color, 0.35);
+    outline-offset: 1px;
+}
+
+
+/* ── Settings: tool chips ────────────────────────────────────── */
+/*
+ * Built-in tool names in Settings → Tools render as compact pills in a
+ * FlowBox. Colors source from libadwaita tokens so they follow the
+ * dark/light theme like everything else.
+ */
+
+.helios-tool-chip {
+    padding: 2px 10px;
+    border-radius: 8px;
+    background-color: alpha(@view_fg_color, 0.08);
+    border: 1px solid alpha(@view_fg_color, 0.10);
+    font-size: 0.85em;
+    font-family: monospace;
+    color: @view_fg_color;
+}
+
+
+/* ── Session row metadata chips (host / cwd) ─────────────────── */
+/*
+ * Unified session list: pool sessions carry a host chip, local sessions
+ * a cwd chip when their working dir isn't $HOME. Same token sourcing as
+ * the settings tool chips so they follow dark/light.
+ */
+
+.helios-chip {
+    padding: 1px 7px;
+    border-radius: 8px;
+    background-color: alpha(@view_fg_color, 0.08);
+    border: 1px solid alpha(@view_fg_color, 0.10);
+    color: alpha(@view_fg_color, 0.75);
+}
+
+.helios-session-row-remote .helios-chip {
+    background-color: alpha(@accent_bg_color, 0.12);
+    border-color: alpha(@accent_bg_color, 0.20);
+}
+
+/* Provider badge (GPT vs Claude) on each session row. Brand hue is carried by a
+   tint fill + a brand ring, not by a solid pill with white text: white on the
+   brand colors measured 3.12:1 (clay), 3.20:1 (green) and similar (indigo),
+   all under the 4.5:1 WCAG AA floor for this 0.74em text. Theme foreground on a
+   near-background tint clears AA with room to spare (~15:1 light, ~14:1 dark)
+   while the 55% ring keeps Claude / GPT / OpenRouter distinguishable by hue in
+   both themes — same idiom as .helios-queued-pill above. */
+.helios-provider-chip {
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 0.74em;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    color: @view_fg_color;
+}
+
+.helios-provider-claude {
+    /* Anthropic clay. */
+    background-color: alpha(#d97757, 0.18);
+    box-shadow: inset 0 0 0 1px alpha(#d97757, 0.55);
+}
+
+.helios-provider-gpt {
+    /* OpenAI green. */
+    background-color: alpha(#10a37f, 0.18);
+    box-shadow: inset 0 0 0 1px alpha(#10a37f, 0.55);
+}
+
+.helios-provider-openrouter {
+    /* OpenRouter indigo. */
+    background-color: alpha(#6366f1, 0.18);
+    box-shadow: inset 0 0 0 1px alpha(#6366f1, 0.55);
+}
+
+.helios-provider-unknown {
+    background-color: alpha(@view_fg_color, 0.14);
+    color: @view_fg_color;
+}
+
+.helios-provider-conflict {
+    background-color: #a15c00;
+    color: #ffffff;
+}
+
+/* Filter dropdown sits where the projects panel used to be — keep it
+   visually quiet. */
+.helios-session-filter {
+    font-size: 0.9em;
+}
+
+/* Shared Context pane: data payload renders monospace. */
+.helios-shared-data {
+    font-family: monospace;
+    font-size: 0.85em;
+}
+
+/* The `text` node of a GtkTextView paints @view_bg_color by default, which the
+   Gtk.Label this replaced did not — without this the detail body draws an
+   opaque panel over the pane's own ground. Same override, same reason, as
+   .helios-codeview text and .helios-composer-text text above; those two are
+   the precedent, not a guess about Adwaita. */
+.helios-shared-data text {
+    background: transparent;
+}
+
+/* Effort level changed — one accent flash on the collapsed Execution chip,
+   because the popover is usually covering the slider that moved. Removed by
+   the widget after ~420ms; skipped entirely under reduced motion. */
+.helios-effort-bump {
+    color: @accent_color;
+    transition: color 160ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* "Older models" disclosure in the model picker. Quiet by construction: it
+   exists so the current models are the only thing you normally read. */
+.helios-model-older > title {
+    font-size: 0.9em;
+    opacity: 0.7;
+}
+
+/* Top reasoning stop (Max) — a quiet accent so the deepest, slowest setting
+   is visible on the collapsed chip without shouting. Replaces the retired
+   .helios-effort-ultracode. */
+.helios-effort-max {
+    color: @accent_color;
+}

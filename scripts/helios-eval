@@ -1,0 +1,37 @@
+#!/usr/bin/env python3
+"""Validate/grade frozen artifact suites without provider calls or promotion."""
+import argparse
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from helios.backend.capability_eval import compare, fingerprint, grade_run, read_json, validate_suite
+
+p = argparse.ArgumentParser(description=__doc__)
+p.add_argument("suite", type=Path)
+p.add_argument("--run", type=Path)
+p.add_argument("--baseline", type=Path)
+p.add_argument("--baseline-surface")
+p.add_argument("--candidate-surface")
+args = p.parse_args()
+try:
+    suite = validate_suite(read_json(args.suite))
+    if args.baseline and not args.run:
+        p.error("--baseline requires --run")
+    if args.baseline and not (args.baseline_surface and args.candidate_surface):
+        p.error("paired comparison requires --baseline-surface and --candidate-surface")
+    if not args.baseline and (args.baseline_surface or args.candidate_surface):
+        p.error("comparison surface options require --baseline")
+    result = (compare(suite, args.baseline, args.run, baseline_surface=args.baseline_surface,
+                      candidate_surface=args.candidate_surface) if args.baseline else
+              grade_run(suite, args.run) if args.run else
+              {"suite_sha256": fingerprint(suite), "cases": len(suite["cases"])})
+    print(json.dumps(result, indent=2, allow_nan=False))
+    if args.run:
+        grade = result["candidate"] if args.baseline else result
+        sys.exit(0 if grade["total"] and grade["passed"] == grade["total"] and not grade["missing_cases"] else 1)
+except (OSError, ValueError, RecursionError) as exc:
+    # Do not echo exception text: malformed JSON/pathnames can contain secrets.
+    print(json.dumps({"error": type(exc).__name__, "message": "Invalid evaluation input; check suite, manifest and artifact paths."}), file=sys.stderr)
+    sys.exit(2)

@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# Install or update the credential-owning Helios Router system service.
+#
+# The OpenRouter key must already exist at the fixed credential path. This
+# script never accepts a secret in argv or an environment variable.
+set -euo pipefail
+
+harden_release_tree() {
+    local target="$1"
+    # mktemp creates the staging root as 0700. Releases contain no secrets and
+    # must be traversable by the unprivileged service user, while remaining
+    # writable only by root. `X` preserves non-executable data files.
+    chmod -R a+rX,go-w "${target}"
+}
+
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    return 0
+fi
+
+if [[ "${EUID}" -ne 0 ]]; then
+    echo "Run this installer as root." >&2
+    exit 1
+fi
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${script_dir}/.." && pwd)"
+install_root="/opt/helios-router"
+release_root="${install_root}/releases"
+credential_dir="/etc/helios-router"
+credential_path="${credential_dir}/openrouter.key"
+unit_path="/etc/systemd/system/helios-router.service"
+client_user="${HELIOS_ROUTER_CLIENT_USER:-${SUDO_USER:-spencer}}"
+
+release_id="$(git -C "${repo_root}" rev-parse --verify HEAD 2>/dev/null || true)"
+origin_main="$(
+    git -C "${repo_root}" rev-parse --verify refs/remotes/origin/main \
+        2>/dev/null || true
+)"
+branch="$(git -C "${repo_root}" symbolic-ref --quiet --short HEAD || true)"
+release_tag="$(
+    git -C "${repo_root}" describe --tags --exact-match "${release_id}" \
+        2>/dev/null || true
+)"
+if [[ ! "${release_id}" =~ ^[0-9a-f]{40}$ \
+    || "${release_id}" != "${origin_main}" \
+    || "${branch}" != "main" \
+    || ! "${release_tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ \
+    || -n "$(git -C "${repo_root}" diff --name-only)" \
+    || -n "$(git -C "${repo_root}" diff --cached --name-only)" ]]; then
+    echo "Install only an exact tagged, clean, origin/main commit." >&2
+    exit 1
+fi
+
+if ! id "${client_user}" >/dev/null 2>&1; then
+    echo "Helios client user does not exist: ${client_user}" >&2
+    exit 1
+fi
+socket_group="${HELIOS_ROUTER_SOCKET_GROUP:-$(id -gn "${client_user}")}"
+if [[ ! "${socket_group}" =~ ^[a-z_][a-z0-9_-]*$ ]] \
+    || ! getent group "${socket_group}" >/dev/null; then
+    echo "Invalid or missing Helios client socket group." >&2
+    exit 1
+fi
+
+if ! getent group helios-router >/dev/null; then
+    groupadd --system helios-router
+fi
+if ! id helios-router >/dev/null 2>&1; then
+    useradd \
+        --system \
+        --gid helios-router \
+        --home-dir /nonexistent \
+        --shell /usr/sbin/nologin \
+        helios-router
+fi
+
+install -d -o root -g helios-router -m 0750 "${credential_dir}"
+if [[ ! -f "${credential_path}" || -L "${credential_path}" ]]; then
+    echo "Provision ${credential_path} as a regular file before installing." >&2
+    exit 1
+fi
+chown root:helios-router "${credential_path}"
+chmod 0640 "${credential_path}"
+
+install -d -o root -g root -m 0755 "${install_root}" "${release_root}"
+release_path="${release_root}/${release_id}"
+
+if [[ ! -d "${release_path}" ]]; then
+    staging_path="$(mktemp -d "${release_root}/.staging.XXXXXX")"
+    cleanup() {
+        if [[ -n "${staging_path:-}" && -d "${staging_path}" ]]; then
+            rm -rf -- "${staging_path}"
+        fi
+    }
+    trap cleanup EXIT
+    install -d -o root -g root -m 0755 "${staging_path}/source"
+    git -C "${repo_root}" archive "${release_id}" \
+        | tar -x -C "${staging_path}/source"
+    package_version="$(
+        python3 -c \
+            'import pathlib, re, sys; text = pathlib.Path(sys.argv[1]).read_text(); print(re.search(r"^__version__ = \"([^\"]+)\"", text, re.M).group(1))' \
+            "${staging_path}/source/src/helios/__init__.py"
+    )"
+    project_version="$(
+        python3 -c \
+            'import pathlib, sys, tomllib; print(tomllib.loads(pathlib.Path(sys.argv[1]).read_text())["project"]["version"])' \
+            "${staging_path}/source/pyproject.toml"
+    )"
+    if [[ "v${package_version}" != "${release_tag}" \
+        || "${project_version}" != "${package_version}" ]]; then
+        echo "Release tag and package versions do not match." >&2
+        exit 1
+    fi
+    python3 -m venv --without-pip "${staging_path}/venv"
+    site_packages="$(
+        "${staging_path}/venv/bin/python" -c \
+            'import sysconfig; print(sysconfig.get_paths()["purelib"])'
+    )"
+    cp -a "${staging_path}/source/src/helios" "${site_packages}/helios"
+    printf '%s %s\n' "${release_tag}" "${release_id}" \
+        > "${staging_path}/RELEASE"
+    chown -R root:root "${staging_path}"
+    harden_release_tree "${staging_path}"
+    mv "${staging_path}" "${release_path}"
+    staging_path=""
+    trap - EXIT
+fi
+
+next_link="${install_root}/.current-${release_id}"
+rm -f -- "${next_link}"
+ln -s "${release_path}" "${next_link}"
+mv -Tf "${next_link}" "${install_root}/current"
+
+rendered_unit="$(mktemp)"
+cleanup_unit() {
+    rm -f -- "${rendered_unit}"
+}
+trap cleanup_unit EXIT
+sed "s|@SOCKET_GROUP@|${socket_group}|g" \
+    "${release_path}/source/deploy/helios-router.service.in" > "${rendered_unit}"
+install -o root -g root -m 0644 "${rendered_unit}" "${unit_path}"
+
+systemctl daemon-reload
+systemctl enable helios-router.service
+systemctl restart helios-router.service
+systemctl is-active --quiet helios-router.service
+
+echo "Helios Router installed at ${release_tag} (${release_id})."
+echo "Unix socket group: ${socket_group}"

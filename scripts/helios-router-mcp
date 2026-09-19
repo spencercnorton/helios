@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(
+    CDPATH=''
+    cd -- "$(dirname -- "$0")"
+    pwd
+)
+repo_root=$(
+    CDPATH=''
+    cd -- "$script_dir/.."
+    pwd
+)
+
+# Claude legitimately receives its own auth environment.  The router adapter
+# does not need it, so replace the entire environment before importing Python.
+exec /usr/bin/env -i \
+    LANG=C.UTF-8 \
+    PATH=/usr/bin:/bin \
+    PYTHONPATH="$repo_root/src" \
+    /usr/bin/python3 -m helios.router_mcp "$@"

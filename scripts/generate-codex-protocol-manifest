@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""Regenerate Helios's compact Codex App Server method manifest."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+
+SCHEMA_FILES = {
+    "client_notifications": "ClientNotification.json",
+    "client_requests": "ClientRequest.json",
+    "server_notifications": "ServerNotification.json",
+    "server_requests": "ServerRequest.json",
+}
+
+
+def _codex_version(binary: str) -> str:
+    result = subprocess.run(
+        [binary, "--version"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    match = re.search(r"\b(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\b", result.stdout)
+    if match is None:
+        raise SystemExit(f"could not parse Codex version from {result.stdout!r}")
+    return match.group(1)
+
+
+def _methods(schema_path: Path) -> list[str]:
+    payload = json.loads(schema_path.read_text(encoding="utf-8"))
+    methods: list[str] = []
+    for index, variant in enumerate(payload.get("oneOf", [])):
+        try:
+            values = variant["properties"]["method"]["enum"]
+        except (KeyError, TypeError) as exc:
+            raise SystemExit(
+                f"{schema_path.name} oneOf[{index}] has no method enum"
+            ) from exc
+        if not isinstance(values, list) or len(values) != 1 or not isinstance(
+            values[0], str
+        ):
+            raise SystemExit(
+                f"{schema_path.name} oneOf[{index}] has an invalid method enum"
+            )
+        methods.append(values[0])
+    if len(methods) != len(set(methods)):
+        raise SystemExit(f"{schema_path.name} contains duplicate methods")
+    return sorted(methods)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--codex",
+        default=shutil.which("codex") or "codex",
+        help="Codex executable (default: codex from PATH)",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="Output path (default: docs/protocol/codex-app-server-VERSION.json)",
+    )
+    args = parser.parse_args()
+
+    version = _codex_version(args.codex)
+    repo_root = Path(__file__).resolve().parent.parent
+    output = args.output or (
+        repo_root / "docs" / "protocol" / f"codex-app-server-{version}.json"
+    )
+    with tempfile.TemporaryDirectory(prefix="helios-codex-schema-") as temp_dir:
+        subprocess.run(
+            [
+                args.codex,
+                "app-server",
+                "generate-json-schema",
+                "--experimental",
+                "--out",
+                temp_dir,
+            ],
+            check=True,
+        )
+        schema_root = Path(temp_dir)
+        method_sets = {
+            name: _methods(schema_root / filename)
+            for name, filename in SCHEMA_FILES.items()
+        }
+
+    manifest = {
+        "schema": "codex-app-server-methods",
+        "codex_version": version,
+        "experimental": True,
+        "methods": method_sets,
+    }
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    print(output.relative_to(repo_root) if output.is_relative_to(repo_root) else output)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+*.bak*
+*.orig
+*.tmp
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+# Session artifacts that must never enter the repo. A stray screenshot swept in
+# By `git add -A` broke a Jeeves review outright ("no reviewable diff") on.
+.playwright-mcp/
+*.png
+!data/icons/*.png
+!src/helios/resources/**/*.png
