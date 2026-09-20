@@ -17,7 +17,9 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
-      - run: pip install -q pytest ruff
+      # The same ruff the GitLab lint job pins: a newer default rule set failed the
+      # first public run with 911 findings the project never adopted.
+      - run: pip install -q pytest ruff==0.15.20
       - run: ruff check .
       - name: pytest (GTK hidden)
         run: |
