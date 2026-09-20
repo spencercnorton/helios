@@ -1,0 +1,38 @@
+Source: helios
+Section: devel
+Priority: optional
+Maintainer: Norvi <apt@globalentry.systems>
+Build-Depends: debhelper-compat (= 13),
+               dh-python,
+               pybuild-plugin-pyproject,
+               python3-all,
+               python3-pil,
+               python3-setuptools
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+Homepage: https://github.com/spencercnorton/helios
+
+Package: helios
+Architecture: all
+Depends: ${misc:Depends},
+         ${python3:Depends},
+         gir1.2-adw-1,
+         gir1.2-gtk-4.0,
+         gir1.2-gtksource-5,
+         libgtksourceview-5-0,
+         python3-gi,
+         python3-gi-cairo
+Recommends: git
+Description: desktop for Claude Code, OpenAI Codex and OpenRouter agents
+ Helios is a native GTK4/libadwaita desktop that keeps every coding-agent
+ session in one window: what the agent is doing right now, what it may do,
+ and what it has spent. Claude sessions drive the official claude CLI, GPT
+ sessions bind to a persistent Codex App Server, and OpenRouter sessions run
+ Helios's own agent loop against any model in the live catalog.
+ .
+ Permissions are a visible per-conversation control, every provider has a
+ spend breaker, and a Work carries an objective and a definition of done
+ that the model's plan can never rewrite.
+ .
+ The CLIs themselves are not packaged here: install and sign in to claude
+ (and optionally codex) separately.

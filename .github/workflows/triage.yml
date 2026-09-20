@@ -1,0 +1,34 @@
+# First-response automation for requests and submissions. Labels every new
+# issue and pull request `needs-triage` and leaves one comment saying what
+# happens next. Only the GitHub API is touched: nothing is checked out and no
+# contributor-controlled text reaches a shell. `pull_request_target` is used so
+# pull requests from forks can be labelled; it is safe here precisely because
+# this job never runs code from the pull request.
+name: Triage
+on:
+  issues:
+    types: [opened]
+  pull_request_target:
+    types: [opened]
+permissions:
+  issues: write
+  pull-requests: write
+jobs:
+  first-response:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+    steps:
+      - name: Label
+        run: gh api -X POST "repos/$REPO/issues/$NUMBER/labels" -f 'labels[]=needs-triage'
+      - name: Acknowledge an issue
+        if: github.event_name == 'issues'
+        run: |
+          gh issue comment "$NUMBER" --repo "$REPO" --body "Thanks — this is queued for triage. A maintainer will label it and reply here; if it is a bug we can reproduce, the fix ships in a tagged release and this issue is closed with the version that carries it."
+      - name: Acknowledge a pull request
+        if: github.event_name == 'pull_request_target'
+        run: |
+          gh pr comment "$NUMBER" --repo "$REPO" --body "Thanks for the contribution. CI runs the backend suite on your branch; a maintainer reviews here. This repository is a release mirror, so accepted changes are applied to the development tree and ship in the next tagged release — this pull request is then closed with a reference to that release (see CONTRIBUTING.md)."

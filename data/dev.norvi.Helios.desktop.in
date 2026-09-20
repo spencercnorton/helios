@@ -1,12 +1,12 @@
 [Desktop Entry]
 Type=Application
 Name=Helios
-GenericName=Claude Code GUI
-Comment=Browse Claude Code projects, sessions, and context
+GenericName=Coding agent workbench
+Comment=Work with Claude Code, OpenAI Codex and OpenRouter agents
 Exec=@LAUNCHER@
 Icon=dev.norvi.Helios
 Terminal=false
 Categories=Development;IDE;
-Keywords=claude;ai;code;assistant;agents;chat;
+Keywords=claude;codex;gpt;openrouter;ai;code;assistant;agents;chat;
 StartupWMClass=dev.norvi.Helios
 StartupNotify=true

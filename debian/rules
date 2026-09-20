@@ -1,0 +1,19 @@
+#!/usr/bin/make -f
+# Pure Python: pybuild installs the package and the `helios` console script.
+# The suite runs in the repository's own CI, not here (GTK tests need Xvfb).
+export PYBUILD_NAME = helios
+export PYBUILD_DISABLE = test
+
+%:
+	dh $@ --with python3 --buildsystem=pybuild
+
+override_dh_auto_install:
+	dh_auto_install
+	# The desktop entry points at the console script pybuild just installed,
+	# where scripts/install-desktop.sh points it at a checkout's launcher.
+	install -d debian/helios/usr/share/applications
+	sed 's|@LAUNCHER@|helios|' data/dev.norvi.Helios.desktop.in \
+		> debian/helios/usr/share/applications/dev.norvi.Helios.desktop
+	# Same icon sizes install-desktop.sh renders, from the same master PNG.
+	python3 debian/render-icons.py data/icons/dev.norvi.Helios.png \
+		debian/helios/usr/share/icons/hicolor dev.norvi.Helios

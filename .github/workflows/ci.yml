@@ -1,0 +1,28 @@
+# Backend test suite on every pull request and on main. GTK-free: `gi` is hidden
+# so GTK tests skip exactly as they do in the project's own CI. No secrets,
+# read-only token, GitHub-owned actions pinned by commit.
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - run: pip install -q pytest ruff
+      - run: ruff check .
+      - name: pytest (GTK hidden)
+        run: |
+          mkdir -p "$HOME/nogtk"
+          # pytest >= 8.2 importorskip-skips only on ModuleNotFoundError; a plain
+          # ImportError is a collection error (same shim as .public-release.toml).
+          printf 'raise ModuleNotFoundError("gtk hidden in CI")\n' > "$HOME/nogtk/gi.py"
+          PYTHONPATH="$HOME/nogtk" python3 -m pytest -q -p no:cacheprovider

@@ -1,0 +1,39 @@
+.TH HELIOS 1 "2026" "helios" "User Commands"
+.SH NAME
+helios \- desktop for Claude Code, OpenAI Codex and OpenRouter coding agents
+.SH SYNOPSIS
+.B helios
+.SH DESCRIPTION
+Helios is a native GTK4/libadwaita desktop that keeps every coding-agent
+session in one window: what the agent is doing, what it may do, and what it
+has spent. Claude sessions drive the official
+.B claude
+CLI, GPT sessions bind to a persistent Codex App Server, and OpenRouter
+sessions run Helios's own agent loop. Install and sign in to the CLIs
+separately; Helios finds
+.B claude
+via
+.B $HELIOS_CLAUDE_BINARY
+, then PATH, then its standalone install locations.
+.SH ENVIRONMENT
+.TP
+.B HELIOS_CLAUDE_BINARY
+Path of the claude binary to use instead of the one on PATH.
+.TP
+.B HELIOS_DEBUG
+Set to 1 for wire-level driver tracing.
+.TP
+.B HELIOS_LOG_LEVEL
+Python logging level; WARNING quiets the default INFO.
+.TP
+.B HELIOS_STATE_DIR
+Where Helios keeps its own state (default ~/.helios).
+.SH FILES
+.TP
+.I ~/.helios/
+Works, goals, UI state and editor backups.
+.TP
+.I ~/.claude/projects/
+Claude Code transcripts, read for sessions and status.
+.SH SEE ALSO
+https://github.com/spencercnorton/helios
