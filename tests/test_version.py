@@ -56,3 +56,12 @@ def test_changelog_versions_are_ordered_newest_first() -> None:
         "CHANGELOG entries are out of order — a rebase that resolves a "
         "conflict by keeping both sides can interleave them"
     )
+
+
+def test_agent_docs_name_the_shipping_version() -> None:
+    """docs/agent-setup.md and llms.txt promise every expected result is exact
+    for "this release" and print the version an agent should see; a bump that
+    leaves them behind ships an expectation the agent cannot meet."""
+    for rel in ("docs/agent-setup.md", "llms.txt"):
+        text = (_ROOT / rel).read_text(encoding="utf-8")
+        assert _package_version() in text, f"{rel} does not mention {_package_version()}"

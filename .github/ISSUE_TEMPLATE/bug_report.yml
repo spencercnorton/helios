@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for the report. Please remove anything private from logs and transcripts before pasting them: project paths, hostnames, API keys, conversation content.
+        Thanks for the report. Please remove anything private from logs and transcripts before pasting them: project paths, hostnames, API keys, conversation content. A `HELIOS_DEBUG=1` log records the CLI spawn command line (which includes your working directory), record types and raw CLI stderr, so paths and hostnames are the usual things to redact.
   - type: textarea
     id: what
     attributes:
@@ -19,28 +19,42 @@ body:
     attributes:
       label: Steps to reproduce
       placeholder: |
-        1. Launch `./scripts/helios`
+        1. Launch `helios` (apt package) or `./scripts/helios` (source checkout)
         2. …
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How Helios was installed
+      options: ["apt package (apt.globalentry.systems)", "Source checkout (./scripts/helios)", "Other (say what under What happened)"]
     validations:
       required: true
   - type: dropdown
     id: provider
     attributes:
       label: Provider
-      options: ["Claude (claude CLI)", "GPT (Codex App Server)", "OpenRouter", "Not provider-specific"]
+      description: "\"All providers\" means it happens the same way in Claude, GPT and OpenRouter chats; \"Not provider-specific\" means it is outside a chat (sidebar, Settings, packaging, docs)."
+      options: ["Claude (claude CLI)", "GPT (Codex App Server)", "OpenRouter", "All providers", "Not provider-specific"]
     validations:
       required: true
+  - type: input
+    id: execution
+    attributes:
+      label: Execution settings and working directory
+      description: The three values in the Execution control beside the model picker (workflow · reasoning · permissions, e.g. `Default · High · Ask`), the model, and whether the chat folder is your home directory (chats in `$HOME` are always read-only).
+      placeholder: Default · High · Ask · project folder (not $HOME)
   - type: input
     id: versions
     attributes:
       label: Versions
-      description: Helios version (Settings → About or `pyproject.toml`), `claude --version` / `codex --version`, distro, GTK and libadwaita versions.
-      placeholder: Helios 0.96.3 · claude 2.1.x · Ubuntu 24.04 · GTK 4.14 · libadwaita 1.5
+      description: "Helios version: app menu → About Helios, or `dpkg -s helios | grep ^Version` (apt package), or `PYTHONPATH=src python3 -c 'import helios; print(helios.__version__)'` from a checkout; there is no `helios --version` flag. Also `claude --version` / `codex --version`, your distro, and `dpkg -s gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtksource-5 | grep -E '^(Package|Version)'` (Helios needs GTK 4.10+, libadwaita 1.5+, GtkSourceView 5)."
+      placeholder: Helios 0.99.0 · claude 2.1.x · codex 0.x · Ubuntu 24.04 · GTK 4.14 · libadwaita 1.5 · GtkSourceView 5.12
     validations:
       required: true
   - type: textarea
     id: logs
     attributes:
       label: Log excerpt
-      description: Run with `HELIOS_DEBUG=1 ./scripts/helios` and paste the relevant lines, scrubbed.
+      description: Run `HELIOS_DEBUG=1 helios` (or `HELIOS_DEBUG=1 ./scripts/helios` from a checkout) in a terminal, reproduce, then paste the relevant lines from `~/.helios/logs/helios.log` (the path is shown under Settings → Diagnostics), scrubbed. Launch from a terminal so the variable reaches Helios; the desktop entry does not read your shell rc files.
       render: text

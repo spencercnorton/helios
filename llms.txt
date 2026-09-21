@@ -1,0 +1,19 @@
+# Helios
+
+> A native GTK4/libadwaita desktop for Linux that runs Claude Code, OpenAI Codex and OpenRouter coding-agent sessions in one window, with visible per-conversation permissions and a spend breaker for every provider on metered billing (none on a claude.ai or ChatGPT subscription).
+
+Helios is a Python application (`helios` on APT for Ubuntu 26.04, or `scripts/helios` from a source checkout) that drives the official `claude` CLI, binds GPT sessions to a persistent Codex App Server, and runs its own agent loop against the OpenRouter catalog. It stores no credentials of its own beyond an optional OpenRouter key file (`~/.helios/openrouter.key`, mode 0600) and sends no telemetry. Read these first: docs/agent-setup.md to install and configure it unattended, docs/user-guide.md for what the person sees, and SECURITY.md for the trust model.
+
+## Docs
+
+- [Agent setup guide](docs/agent-setup.md): install, configure and verify Helios from a shell, unattended except the Claude and Codex sign-ins (interactive, handed back to the person), with every command, expected result, path, key and message exact for this release (0.99.0).
+- [User guide](docs/user-guide.md): the application as the person uses it: sessions, providers, permissions, budgets, Rewind, settings and environment variables.
+- [README](README.md): what Helios is, screenshots, install paths, where data lives, and how to contribute or donate.
+- [Security policy](SECURITY.md): supported versions, how to report a vulnerability privately, and the trust model (key storage, permission modes are not a sandbox, no telemetry).
+- [Contributing](CONTRIBUTING.md): the release-mirror contribution model, development setup, test and lint commands, and PR expectations.
+- [GTK4 gotchas](docs/gtk4-gotchas.md): PyGObject, GTK4 and libadwaita traps met while building Helios, with the fixes that held.
+
+## Optional
+
+- [Debian packaging](debian/): control, rules, man page and icon renderer that build the `helios` .deb.
+- [build-deb.sh](scripts/build-deb.sh): builds the .deb and source tarball from a checkout on Linux (`scripts/build-deb.sh [outdir]`).

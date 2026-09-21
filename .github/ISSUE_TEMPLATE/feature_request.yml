@@ -2,6 +2,10 @@ name: Feature request
 description: Propose a change to how Helios works.
 labels: ["enhancement", "needs-triage"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Before writing this up, skim the [user guide](https://github.com/spencercnorton/helios/blob/main/docs/user-guide.md) — the setting or command may already exist — and float half-formed ideas in [Discussions](https://github.com/spencercnorton/helios/discussions) first. Remove anything private (project paths, hostnames, API keys, conversation content) from anything you paste.
   - type: textarea
     id: problem
     attributes:
@@ -13,15 +17,31 @@ body:
     id: proposal
     attributes:
       label: Proposal
-      description: What should change, and what should it look like in the UI?
+      description: What should change, and how would you use it — in the UI, a setting, an environment variable, a script or the package?
     validations:
       required: true
   - type: dropdown
     id: provider
     attributes:
       label: Provider
+      description: "\"All providers\" means it must work the same in Claude, GPT and OpenRouter chats; \"Not provider-specific\" means it lives outside a chat (sidebar, Settings, packaging, docs)."
       options: ["Claude (claude CLI)", "GPT (Codex App Server)", "OpenRouter", "All providers", "Not provider-specific"]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Helios version
+      description: App menu → About Helios, `dpkg -s helios | grep ^Version` (apt package), or `PYTHONPATH=src python3 -c 'import helios; print(helios.__version__)'` from a checkout. Tells us whether the change is already in a newer release.
+      placeholder: Helios 0.99.0
   - type: textarea
     id: alternatives
     attributes:
       label: Alternatives considered
+      description: Workarounds you use today (a key in `~/.helios/ui-state.json`, an environment variable, a different provider or permission mode) and why they fall short.
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I would like to send a pull request for this once the approach is agreed.

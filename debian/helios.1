@@ -20,6 +20,9 @@ via
 .B HELIOS_CLAUDE_BINARY
 Path of the claude binary to use instead of the one on PATH.
 .TP
+.B HELIOS_CODEX_BINARY
+Path of the codex binary to use instead of the one on PATH.
+.TP
 .B HELIOS_DEBUG
 Set to 1 for wire-level driver tracing.
 .TP
@@ -27,7 +30,10 @@ Set to 1 for wire-level driver tracing.
 Python logging level; WARNING quiets the default INFO.
 .TP
 .B HELIOS_STATE_DIR
-Where Helios keeps its own state (default ~/.helios).
+Root for the log, the Work database, per-conversation permissions,
+checkpoints, goals and OpenRouter session history (default ~/.helios).
+ui-state.json, openrouter.key, the caches, backups/ and session-archive/
+stay under ~/.helios regardless; override HOME to relocate everything.
 .SH FILES
 .TP
 .I ~/.helios/
