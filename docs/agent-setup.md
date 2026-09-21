@@ -1,6 +1,6 @@
 # Helios for autonomous agents — install, configure, verify
 
-This document is for an agent with shell access on a Linux machine that has to install and configure Helios for a person, unattended, and prove that it worked. Every step is a command followed by its expected result, and every path, key, default and message is taken from the source of this release (0.99.1), so a mismatch is a finding, not a typo. It cannot sign the person in to Claude or Codex: those are interactive logins in the CLIs' own credential stores, and the agent hands them back to the person at the points marked below.
+This document is for an agent with shell access on a Linux machine that has to install and configure Helios for a person, unattended, and prove that it worked. Every step is a command followed by its expected result, and every path, key, default and message is taken from the source of this release (0.99.2), so a mismatch is a finding, not a typo. It cannot sign the person in to Claude or Codex: those are interactive logins in the CLIs' own credential stores, and the agent hands them back to the person at the points marked below.
 
 ## Facts at a glance
 
@@ -63,7 +63,7 @@ Expected:
 
 ```
 Status: install ok installed
-Version: 0.99.1
+Version: 0.99.2
 ```
 
 `apt` pulls in `python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtksource-5 libgtksourceview-5-0` and, because Recommends are installed by default, `git`.
@@ -100,11 +100,11 @@ Expected: a version of `3.11` or newer.
 Step B3. Clone and read the version.
 
 ```bash
-git clone --branch v0.99.1 https://github.com/spencercnorton/helios.git ~/helios
+git clone --branch v0.99.2 https://github.com/spencercnorton/helios.git ~/helios
 PYTHONPATH=~/helios/src python3 -c "import helios; print(helios.__version__)"
 ```
 
-Expected: the clone prints `Note: switching to '<sha>'.` and a `You are in 'detached HEAD' state` paragraph (normal for a tag checkout), then `0.99.1`. Drop `--branch v0.99.1` to track the newest release instead; the version printed is then whatever `main` carries, and the `0.99.1` strings in this document, 7.3 and 12 are the release it was written for, not a mismatch.
+Expected: the clone prints `Note: switching to '<sha>'.` and a `You are in 'detached HEAD' state` paragraph (normal for a tag checkout), then `0.99.2`. Drop `--branch v0.99.2` to track the newest release instead; the version printed is then whatever `main` carries, and the `0.99.2` strings in this document, 7.3 and 12 are the release it was written for, not a mismatch.
 
 Step B4. Optional: app-grid entry and icon.
 
@@ -467,7 +467,7 @@ python3 -c "import helios; print(helios.__version__)"                   # APT (m
 PYTHONPATH=~/helios/src python3 -c "import helios; print(helios.__version__)"    # source checkout
 ```
 
-Expected: `helios	0.99.1` from `dpkg-query`, `0.99.1` from the other two. `man helios` is also installed by the package.
+Expected: `helios	0.99.2` from `dpkg-query`, `0.99.2` from the other two. `man helios` is also installed by the package.
 
 ## 8. Reference
 
@@ -702,7 +702,7 @@ python3 -c 'import json, pathlib, os; d = json.loads((pathlib.Path.home()/".heli
 git -C "$(python3 -c 'import json, pathlib; print(json.loads((pathlib.Path.home()/".helios"/"ui-state.json").read_text())["default_cwd"])')" rev-parse --show-toplevel >/dev/null && echo 9_GIT_REPO_OK
 ```
 
-Expected, in order: `1_BINARY_OK`, `helios	0.99.1` (or `helios 0.99.1`), `2_PYTHON_OK`, `3_LIBS_OK`, `4_GIT_OK`, `5_CLAUDE_FOUND <path> (via ...)` (printed on stderr; the path alone goes to stdout and into `C`, so lines 6 and 7 test the binary Helios will run, not whatever `claude` is on the agent's `PATH`), `6_CLAUDE_VERSION 2.1.217` or newer, `7_CLAUDE_LOGGED_IN`, `8_DEFAULT_CWD_OK <path> <mode> False` (`True` only if the person has already used Settings → "Save chat defaults"), `9_GIT_REPO_OK`. Line 7 is the one the agent cannot fix alone: hand `claude auth login --claudeai` (or `--console`) back to the person and re-run from line 7. Line 9 is advisory (Rewind only). Optional providers: `codex login status` printing `logged in` with exit 0 (5.2), and `stat -c '%a' ~/.helios/openrouter.key` printing `600` plus the `key-ok` check (5.3).
+Expected, in order: `1_BINARY_OK`, `helios	0.99.2` (or `helios 0.99.2`), `2_PYTHON_OK`, `3_LIBS_OK`, `4_GIT_OK`, `5_CLAUDE_FOUND <path> (via ...)` (printed on stderr; the path alone goes to stdout and into `C`, so lines 6 and 7 test the binary Helios will run, not whatever `claude` is on the agent's `PATH`), `6_CLAUDE_VERSION 2.1.217` or newer, `7_CLAUDE_LOGGED_IN`, `8_DEFAULT_CWD_OK <path> <mode> False` (`True` only if the person has already used Settings → "Save chat defaults"), `9_GIT_REPO_OK`. Line 7 is the one the agent cannot fix alone: hand `claude auth login --claudeai` (or `--console`) back to the person and re-run from line 7. Line 9 is advisory (Rewind only). Optional providers: `codex login status` printing `logged in` with exit 0 (5.2), and `stat -c '%a' ~/.helios/openrouter.key` printing `600` plus the `key-ok` check (5.3).
 
 ### 12.2 Desktop session only (7.1)
 

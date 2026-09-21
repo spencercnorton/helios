@@ -24,6 +24,8 @@
   </picture>
 </p>
 
+<p align="center"><sub>Every picture here is Helios on an Ubuntu desktop with its translucent sidebar on, driving an invented demonstration project; nothing personal appears in them.</sub></p>
+
 Helios is named for the sun that, in the old stories, saw everything that
 happened on earth. That is the whole idea. Terminal agents are powerful and
 easy to lose track of: which session is waiting on you, what a command is
@@ -68,7 +70,10 @@ command or diff, why it wants it, and the rule it would remember — and a
 session started in your home folder is read-only whatever you pick.
 
 <p align="center">
-  <img alt="An approval dialog: Allow Bash? Run the test suite. Command: python3 -m pytest -q tests/ — Allow once, Allow for this session, Deny, Other" src="docs/screenshots/approval-light.png" width="900">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/approval-dark.png">
+    <img alt="An approval dialog over a running session: Allow Bash? Run the test suite. Command: python3 -m pytest -q tests/ — Allow once, Allow for this session, Deny, Other" src="docs/screenshots/approval-light.png" width="900">
+  </picture>
 </p>
 
 **A plan you own.** A Work carries an objective, a definition of done and an
@@ -78,7 +83,10 @@ investigates read-only and hands you the plan to approve, approve with edits
 auto-accepted, or send back with feedback.
 
 <p align="center">
-  <img alt="The Plan pane beside a transcript: orient, plan, build, verify and handoff steps with quality signals" src="docs/screenshots/plan-pane.png" width="900">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/plan-pane-dark.png">
+    <img alt="The Plan pane beside a transcript: orient, plan, build, verify and handoff steps with quality signals" src="docs/screenshots/plan-pane-light.png" width="900">
+  </picture>
 </p>
 
 **Spend that cannot run away.** Every provider has a breaker. On per-token
