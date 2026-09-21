@@ -1,5 +1,5 @@
 """Helios — native Ubuntu GUI for Claude Code (and OpenAI Codex)."""
 
-__version__ = "0.99.4"
+__version__ = "0.99.5"
 APP_ID = "dev.norvi.Helios"
 APP_NAME = "Helios"

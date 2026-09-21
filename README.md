@@ -10,6 +10,7 @@
 </p>
 
 <p align="center">
+  <a href="https://norvitech.com"><img alt="NorviTech Suite" src="https://img.shields.io/badge/NorviTech-Suite-FD8024.svg"></a>
   <a href="https://github.com/spencercnorton/helios/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/spencercnorton/helios/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/spencercnorton/helios/releases"><img alt="Latest release" src="https://img.shields.io/github/v/tag/spencercnorton/helios?label=release&sort=semver"></a>
   <a href="https://apt.globalentry.systems"><img alt="APT repository" src="https://img.shields.io/badge/apt-Ubuntu%2026.04-e95420.svg?logo=ubuntu&logoColor=white"></a>
@@ -33,7 +34,7 @@ about to touch, how much a long task has cost. Helios keeps every session in
 one window and puts the controls that matter — permissions, budgets, the plan
 you agreed to — where you can see them, not in flags.
 
-## What it looks like
+## What it does
 
 **Every session in one place.** The sidebar lists every project and session
 on the machine with a live status dot; the transcript streams markdown,
@@ -297,3 +298,16 @@ docs/                        # user guide, agent setup, GTK4 gotchas, screenshot
 ## Licence
 
 [MIT](LICENSE) © Spencer Norton
+
+---
+
+<p align="center">
+  <a href="https://norvitech.com"><img alt="Part of the NorviTech Suite — open-source apps for the Linux desktop and the self-hosted stack" src="https://norvitech.com/assets/banner.svg" width="640"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/spencercnorton/helios">Helios</a> ·
+  <a href="https://github.com/spencercnorton/bitagent">BitAgent</a> ·
+  <a href="https://github.com/spencercnorton/xnote">XNote</a> ·
+  <a href="https://norvitech.com">norvitech.com</a>
+</p>

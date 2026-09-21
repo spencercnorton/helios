@@ -6,3 +6,6 @@ contact_links:
   - name: Question or idea
     url: https://github.com/spencercnorton/helios/discussions
     about: Ask how something works, or float an idea before writing it up as a feature request.
+  - name: The NorviTech Suite
+    url: https://norvitech.com
+    about: The other apps this one ships alongside.
