@@ -7,7 +7,7 @@ model and the durable ledger **in the clear**, while `sk-ant-*`, `AKIA*` and
 constantly, so the gap mattered more than the list length suggests.
 
 Tokens here are GENERATED, never literal — a realistic literal in a fixture is
-what tripped the `secret_scan` job on helios!122.
+what tripped the `secret_scan` job the first time this suite ran in CI.
 """
 
 from __future__ import annotations
