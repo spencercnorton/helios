@@ -44,12 +44,13 @@ body:
       label: Execution settings and working directory
       description: The three values in the Execution control beside the model picker (workflow · reasoning · permissions, e.g. `Default · High · Ask`), the model, and whether the chat folder is your home directory (chats in `$HOME` are always read-only).
       placeholder: Default · High · Ask · project folder (not $HOME)
-  - type: input
+  - type: textarea
     id: versions
     attributes:
       label: Versions
       description: "Helios version: app menu → About Helios, or `dpkg -s helios | grep ^Version` (apt package), or `PYTHONPATH=src python3 -c 'import helios; print(helios.__version__)'` from a checkout; there is no `helios --version` flag. Also `claude --version` / `codex --version`, your distro, and `dpkg -s gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtksource-5 | grep -E '^(Package|Version)'` (Helios needs GTK 4.10+, libadwaita 1.5+, GtkSourceView 5)."
-      placeholder: Helios 0.99.0 · claude 2.1.x · codex 0.x · Ubuntu 24.04 · GTK 4.14 · libadwaita 1.5 · GtkSourceView 5.12
+      placeholder: Helios 0.x.y · claude 2.1.x · codex 0.x · Ubuntu 24.04 · GTK 4.14 · libadwaita 1.5 · GtkSourceView 5.12
+      render: text
     validations:
       required: true
   - type: textarea

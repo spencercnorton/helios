@@ -1,6 +1,6 @@
 # Helios for autonomous agents — install, configure, verify
 
-This document is for an agent with shell access on a Linux machine that has to install and configure Helios for a person, unattended, and prove that it worked. Every step is a command followed by its expected result, and every path, key, default and message is taken from the source of this release (0.99.0), so a mismatch is a finding, not a typo. It cannot sign the person in to Claude or Codex: those are interactive logins in the CLIs' own credential stores, and the agent hands them back to the person at the points marked below.
+This document is for an agent with shell access on a Linux machine that has to install and configure Helios for a person, unattended, and prove that it worked. Every step is a command followed by its expected result, and every path, key, default and message is taken from the source of this release (0.99.1), so a mismatch is a finding, not a typo. It cannot sign the person in to Claude or Codex: those are interactive logins in the CLIs' own credential stores, and the agent hands them back to the person at the points marked below.
 
 ## Facts at a glance
 
@@ -23,9 +23,9 @@ This document is for an agent with shell access on a Linux machine that has to i
 | Minimum GTK / libadwaita / GtkSourceView | 4.10 / 1.5 / 5.0 — checked at startup through gi namespaces `Gtk/4.0`, `Adw/1`, `GtkSource/5`; exit code 1 with a message when too old |
 | Minimum Python | 3.11 — enforced only by `pyproject.toml` (`requires-python = ">=3.11"`) when pip-installed; the `.deb` depends on an unversioned `python3:any` and nothing checks it at startup, so an older interpreter fails on import |
 | Command-line options | None. Helios registers no options of its own; `helios --version` prints `Unknown option --version` and exits 1, and so does every other flag. Only GLib's own `-h`/`--help`, `--help-all`, `--help-gapplication` and `--gapplication-service` are accepted. A positional argument prints a `GLib-GIO-CRITICAL` line ending `This application can not open files.` and exits 1 |
-| Reading the version | `dpkg-query -W helios`, or `python3 -c "import helios; print(helios.__version__)"` (with `PYTHONPATH=<checkout>/src` on a checkout) |
+| Reading the version | `dpkg-query -W helios`, or `python3 -c "import helios; print(helios.__version__)"` (with `PYTHONPATH=~/helios/src` on a checkout) |
 | Single instance | `Adw.Application` with `DEFAULT_FLAGS`: on a session bus a second `helios` activates and raises the running window instead of opening a second one |
-| CLIs | Not packaged and not depended on. Claude sessions need the `claude` CLI; GPT sessions need the `codex` CLI (optional); OpenRouter needs a key file (optional) |
+| CLIs | Not packaged and not depended on. Claude sessions need the `claude` CLI (install: 5.1); GPT sessions need the `codex` CLI (optional); OpenRouter needs a key file (optional) |
 | `.deb` Depends | `gir1.2-adw-1 gir1.2-gtk-4.0 gir1.2-gtksource-5 libgtksourceview-5-0 python3-gi python3-gi-cairo` plus the Python dependency; Recommends `git` (needed for Rewind) |
 
 ## 1. Choose the install path
@@ -63,7 +63,7 @@ Expected:
 
 ```
 Status: install ok installed
-Version: 0.99.0
+Version: 0.99.1
 ```
 
 `apt` pulls in `python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtksource-5 libgtksourceview-5-0` and, because Recommends are installed by default, `git`.
@@ -100,12 +100,11 @@ Expected: a version of `3.11` or newer.
 Step B3. Clone and read the version.
 
 ```bash
-git clone https://github.com/spencercnorton/helios.git ~/helios
-cd ~/helios
-PYTHONPATH=src python3 -c "import helios; print(helios.__version__)"
+git clone --branch v0.99.1 https://github.com/spencercnorton/helios.git ~/helios
+PYTHONPATH=~/helios/src python3 -c "import helios; print(helios.__version__)"
 ```
 
-Expected: `0.99.0`.
+Expected: the clone prints `Note: switching to '<sha>'.` and a `You are in 'detached HEAD' state` paragraph (normal for a tag checkout), then `0.99.1`. Drop `--branch v0.99.1` to track the newest release instead; the version printed is then whatever `main` carries, and the `0.99.1` strings in this document, 7.3 and 12 are the release it was written for, not a mismatch.
 
 Step B4. Optional: app-grid entry and icon.
 
@@ -156,7 +155,7 @@ PY
 
 Expected: `GTK 4 <minor>` with minor at least 10, `libadwaita 1 <minor>` with minor at least 5, `GtkSourceView 5 <minor>`, then `cairo ok`. A `ValueError: Namespace ... not available` means the matching `gir1.2-*` package is missing. An `ImportError` on the last line means PyGObject's cairo integration is missing (`python3-gi-cairo` on Debian and Ubuntu, a hard dependency of the `.deb`); Helios's own checker below does not test it; the `.deb` depends on it because the toolbar's context meter (`src/helios/widgets/chat_toolbar.py`) is a `Gtk.DrawingArea` draw function, which is handed a cairo context.
 
-Then run Helios's own checker. On a checkout prefix the command with `PYTHONPATH=src`. Importing `helios.deps` configures logging, so `<state dir>/logs/` is created by this call.
+Then run Helios's own checker. On a checkout prefix the command with `PYTHONPATH=~/helios/src`. Importing `helios.deps` configures logging, so `<state dir>/logs/` is created by this call.
 
 ```bash
 python3 -c 'from helios.deps import check_runtime_versions as c; print(c())'
@@ -191,27 +190,37 @@ How Helios finds `claude`. It never runs a bare `claude` through a shell. It res
 
 Otherwise `ClaudeBinaryNotFound`: `Could not find a working `claude` binary. Set $HELIOS_CLAUDE_BINARY or fix your `claude` install.` Settings shows `Not found — set $HELIOS_CLAUDE_BINARY` in the Claude binary row. The window still opens without a binary; the message appears as a toast on the first send.
 
+Installing the CLI. Helios neither packages nor installs `claude`; on a fresh machine nothing below finds it. The commands here are Anthropic's, not Helios's — confirm them against the current Claude Code install page if they fail. Native installer (Anthropic's recommended path): run it as the person, not with `sudo` (the installer refuses `sudo`). It installs under `$HOME` with the launcher at `~/.local/bin/claude`, a symlink into `~/.local/share/claude/versions/` — search steps 3 and 4 above, so a `.desktop` launch finds it with no PATH work — and it auto-updates:
+
+```bash
+command -v claude >/dev/null || curl -fsSL https://claude.ai/install.sh | bash
+"$(command -v claude || echo ~/.local/bin/claude)" --version   # an existing npm install has no ~/.local/bin/claude
+```
+
+Expected: `<version> (Claude Code)`, 2.1.217 or later (the floor below). An npm install (`npm install -g @anthropic-ai/claude-code`) lands wherever npm's prefix is: a system prefix (`/usr/local/bin`) is on the desktop PATH and step 2 finds it; a Node version manager's prefix is not, and needs the symlink fix below.
+
 ```bash
 command -v claude; ls -l ~/.local/bin/claude 2>/dev/null; ls ~/.local/share/claude/versions/ 2>/dev/null
 ```
 
 Expected: at least one line names an executable. If only the first does and the path is outside `~/.local/bin` (for example under a Node version manager), read the next paragraph.
 
-The desktop-launch PATH trap. A `.desktop` launch (`Exec=helios` or `Exec=<checkout>/scripts/helios`) runs without a login shell: `~/.bashrc` and `~/.profile` are not read, so a `claude` that is only on the terminal's `PATH` is invisible, and `HELIOS_*` variables exported in shell rc files are not seen. Steps 3 and 4 above exist for this reason. Check what a desktop launch will find by resolving with a minimal environment (add `PYTHONPATH=<checkout>/src` on a source install):
+The desktop-launch PATH trap. A `.desktop` launch (`Exec=helios` or `Exec=<checkout>/scripts/helios`) runs without a login shell: `~/.bashrc` and `~/.profile` are not read, so a `claude` that is only on the terminal's `PATH` is invisible, and `HELIOS_*` variables exported in shell rc files are not seen. Steps 3 and 4 above exist for this reason. Check what a desktop launch will find by resolving with a minimal environment (on a source install `PYTHONPATH` must be given as an argument to `env`, after `-i`; a prefix before `env -i` is wiped):
 
 ```bash
-env -i HOME="$HOME" PATH=/usr/local/bin:/usr/bin:/bin python3 -c "from helios.backend.claude_binary import find_claude_binary; print(find_claude_binary())"
+env -i HOME="$HOME" PATH=/usr/local/bin:/usr/bin:/bin python3 -c "from helios.backend.claude_binary import find_claude_binary; print(find_claude_binary())"                                   # APT
+env -i HOME="$HOME" PATH=/usr/local/bin:/usr/bin:/bin PYTHONPATH="$HOME/helios/src" python3 -c "from helios.backend.claude_binary import find_claude_binary; print(find_claude_binary())"   # source checkout
 ```
 
-Expected: `<path> (via local-bin)` or another of `env`, `PATH`, `standalone`, `vscode-ext`, `jetbrains-plugin`. A traceback ending in `ClaudeBinaryNotFound` means a desktop launch will not find it. Two fixes:
+Expected: `<path> (via local-bin)` or another of `env`, `PATH`, `standalone`, `vscode-ext`, `jetbrains-plugin`. (`"$HOME/helios/src"` rather than `~/helios/src`: tilde expansion inside a `VAR=~/x` argument to `env` is a bash extension that POSIX `sh`/`dash` do not do.) A traceback ending in `ClaudeBinaryNotFound` means a desktop launch will not find it. Two fixes:
 
 Simplest: make step 3 succeed. No environment variable is needed.
 
 ```bash
-mkdir -p ~/.local/bin && ln -sfn "$(command -v claude)" ~/.local/bin/claude && ls -l ~/.local/bin/claude
+mkdir -p ~/.local/bin && { [ ~/.local/bin/claude -ef "$(command -v claude)" ] || ln -sfn "$(command -v claude)" ~/.local/bin/claude; } && ls -l ~/.local/bin/claude && ~/.local/bin/claude --version
 ```
 
-Expected: a symlink to the real binary.
+Expected: a symlink to the real binary, then a version line. If `~/.local/bin/claude` already is that binary (the native installer's layout) nothing is rewritten; without the `-ef` guard, `ln -f` would replace it with a link to itself.
 
 Or set `HELIOS_CLAUDE_BINARY` on the `Exec=` line. Do not export it in rc files. For the APT install, copy the system entry to the user directory (the user copy takes precedence by basename) and change `Exec`:
 
@@ -283,7 +292,7 @@ There is no environment variable for the OpenRouter key. The desktop key lives a
 stat -c '%a %n' ~/.helios/openrouter.key
 ```
 
-Expected: `600 /home/<user>/.helios/openrouter.key`. Validate with the production rule (add `PYTHONPATH=<checkout>/src` on a source install):
+Expected: `600 /home/<user>/.helios/openrouter.key`. Validate with the production rule (add `PYTHONPATH=~/helios/src` on a source install):
 
 ```bash
 python3 -c 'from helios.backend.openrouter.key import load_key, validate_key; validate_key(load_key()); print("key-ok")'
@@ -293,7 +302,7 @@ Expected: `key-ok`. `KeyValidationError: not a usable OpenRouter API key` means 
 
 Without the file the provider status is `no-key`, the OpenRouter toggle is unselectable and no OpenRouter request is ever made. With a pre-seeded key and no cache the picker offers three built-in rows (`google/gemini-2.5-pro`, `moonshotai/kimi-k2`, `deepseek/deepseek-chat`, status `fallback`) until Settings is opened once: opening Settings with a key present, or saving one, fetches `https://openrouter.ai/api/v1/models` and caches it at `~/.helios/openrouter-models.json`. Model ids whose vendor prefix is `anthropic` or `openai` are never offered here; use the native providers.
 
-The same fetch can be done from a shell, without the GUI, through the function Settings calls (`openrouter_entries(force=True)` in `src/helios/backend/model_catalog.py`; needs network; add `PYTHONPATH=<checkout>/src` on a source install):
+The same fetch can be done from a shell, without the GUI, through the function Settings calls (`openrouter_entries(force=True)` in `src/helios/backend/model_catalog.py`; needs network; add `PYTHONPATH=~/helios/src` on a source install):
 
 ```bash
 python3 -c 'from helios.backend import model_catalog as m; e, s = m.openrouter_entries(force=True); print(s, len(e))'
@@ -317,7 +326,7 @@ The file is written atomically (`ui-state.json.tmp` then rename) with `indent=2,
 |---|---|---|---|---|
 | `default_cwd` | string | unset (`""`) | absolute path of an existing directory | Working directory for new chats. A value that is not an existing directory is ignored with a log warning and the heuristic in 6.3 applies |
 | `permission_mode` | string | `"default"` | `default`, `acceptEdits`, `auto`, `bypassPermissions`, `plan`, `dontAsk` | Global default permission mode. Unknown strings are coerced to `default` and re-persisted at startup |
-| `permission_mode_confirmed` | boolean | `false` | `true`, `false` | Written `true` by Settings → "Save chat defaults". `bypassPermissions` is honoured at startup only when this is `true`; otherwise it is clamped to `default`. Set it `true` whenever you set `permission_mode` |
+| `permission_mode_confirmed` | boolean | `false` | `true`, `false` | Written `true` by Settings → "Save chat defaults". `bypassPermissions` is honoured at startup only when this is `true`; otherwise it is clamped to `default`. Leave it unset. For every mode except `bypassPermissions` it only stops a retired `project-perms.json` entry (6.2) from narrowing the default, so a fresh install does not need it; for `bypassPermissions` it is the person's confirmation (`resolve_startup_default` in `src/helios/backend/project_perms.py`), so never write it from a file. If the person wants Bypass as their global default, they choose it in Settings → "Save chat defaults" themselves |
 | `model` | string | `"fable[1m]"` | a Claude alias or id, an OpenAI id, or an OpenRouter `vendor/model` id | Sticky model for the next new chat. An empty or absent value resolves to `fable[1m]` at startup, so `""` cannot be pre-set from the file; the picker's `Default (from Claude settings)` entry (empty id, `--model` omitted) is a runtime choice that reverts to `fable[1m]` on the next launch. Classification: an id containing `/` is OpenRouter; an id starting with `gpt-<digit>`, `o<digit>`, `codex` or `chatgpt` is OpenAI; anything else is Anthropic |
 | `model_anthropic` | string | unset | as `model` | Last model used on the Claude side of the header toggle |
 | `model_openai` | string | unset | as `model` | Last model used on the GPT side |
@@ -344,15 +353,16 @@ The file is written atomically (`ui-state.json.tmp` then rename) with `indent=2,
 
 Settings defers `permission_mode` and `model` to the "Save chat defaults" button, and `ollama_url` / `ollama_title_model` to Behavior → "Save and check" (editing the two rows only changes the status text to `Settings changed. Save and check to use this server and model.`); every other Settings control writes its key immediately.
 
-Merge keys atomically with the same permissions Helios uses (fails loudly on a malformed existing file, which is what you want):
+Merge keys atomically with the same permissions Helios uses (fails loudly on a malformed existing file, which is what you want). The example creates the project directory first (why: 6.3) and splices `$HOME` from the shell so the JSON value is absolute; it sets nothing about permissions:
 
 ```bash
+mkdir -p ~/project && git -C ~/project init -q
 python3 -c 'import json,os,pathlib,sys; p=pathlib.Path.home()/".helios"/"ui-state.json"; p.parent.mkdir(parents=True,exist_ok=True); os.chmod(p.parent,0o700); d=json.loads(p.read_text()) if p.is_file() else {}; d=d if isinstance(d,dict) else {}; d.update(json.loads(sys.argv[1])); t=p.with_suffix(".json.tmp"); t.write_text(json.dumps(d,indent=2,sort_keys=True)); os.chmod(t,0o600); t.replace(p); print(json.dumps(d,sort_keys=True))' \
-  '{"default_cwd": "/home/<user>/project", "permission_mode": "acceptEdits", "permission_mode_confirmed": true, "effort_level": "high"}'
+  '{"default_cwd": "'"$HOME"'/project"}'
 stat -c '%a' ~/.helios/ui-state.json
 ```
 
-Expected: the merged object printed on one line, then `600`.
+Expected: `{"default_cwd": "/home/<user>/project"}` merged with whatever was there, printed on one line, then `600`. Add other keys from the table only when the person asked for them.
 
 ### 6.2 `<state dir>/conversation-perms.json`
 
@@ -377,14 +387,13 @@ Per-conversation overrides, nested by provider (`anthropic`, `openai`, `openrout
 
 New-chat working directory at startup: `default_cwd` if it is an existing directory; otherwise the most recently modified local (non-pool) project Helios already knows about whose directory still exists and is not `$HOME`, preferring one that is not a throwaway (`/tmp`, under `/tmp/`, or any `_tmp_*` path component) and using a throwaway only when nothing else qualifies; otherwise `$HOME`. On a fresh install there are no projects, so the first chat opens in `$HOME`, and a chat whose working directory is `$HOME` is forced read-only (`plan`) for every provider: the composer toasts `This chat is in $HOME, so permissions are read only. It can inspect and answer, but pick a project folder to change files.` and any other permission choice is refused with `HOME chats use read-only permissions. Select a project folder before granting file changes.` Only `$HOME` itself is locked, not its subdirectories.
 
-Set `default_cwd` to a project directory before the first launch. It must exist. A git repository is recommended: Rewind takes a checkpoint before each message only when the folder is inside a git worktree. A repository with no commits yet is enough (`snapshot()` in `src/helios/backend/checkpoints.py` treats an unborn `HEAD` as fine and skips `read-tree`). If the person has no project yet, make one:
+Set `default_cwd` to a project directory before the first launch. It must exist. A git repository is recommended: Rewind takes a checkpoint before each message only when the folder is inside a git worktree. A repository with no commits yet is enough (`snapshot()` in `src/helios/backend/checkpoints.py` treats an unborn `HEAD` as fine and skips `read-tree`). If the person has no project yet, the 6.1 example already made one (`~/project`, an empty repository) and merged it as `default_cwd`; substitute the person's own project directory there when they have one. Verify:
 
 ```bash
-mkdir -p /home/<user>/project && git -C /home/<user>/project init -q
-test -d /home/<user>/project && git -C /home/<user>/project rev-parse --show-toplevel
+git -C ~/project rev-parse --show-toplevel
 ```
 
-Expected: `/home/<user>/project` (the repository root). Then merge `{"default_cwd": "/home/<user>/project"}` with the one-liner in 6.1. Helios creates `~/.claude/projects/-home-<user>-project/` for that directory at startup: the directory name is the path with every `/` replaced by `-` and nothing else changed (`encode_project_dirname` in `src/helios/backend/projects.py`), the value is `~`-expanded but symlinks are not resolved, and the directory is made with parents, so `~/.claude` need not exist before the first launch. A missing `~/.claude/projects` on a machine where the `claude` CLI has never run is also fine: discovery treats it as no sessions.
+Expected: `/home/<user>/project` (the repository root; git resolves symlinks, so on a host where `/home` is a symlink it prints the resolved form). `default_cwd` must be an absolute path: `configured_default_cwd()` in `src/helios/backend/ui_state.py` tests `Path(configured).is_dir()` on the raw string, so `~/project` is ignored with the log line `default cwd ~/project is not a directory; ignoring` and the startup heuristic above applies (on a fresh profile with no prior projects that is `$HOME`, read-only). Helios creates `~/.claude/projects/-home-<user>-project/` for that directory at startup: the directory name is the path with every `/` replaced by `-` and nothing else changed (`encode_project_dirname` in `src/helios/backend/projects.py`); neither that check nor `ensure_local_project()` resolves symlinks, so the directory name mirrors the path exactly as written, and the directory is made with parents, so `~/.claude` need not exist before the first launch. A missing `~/.claude/projects` on a machine where the `claude` CLI has never run is also fine: discovery treats it as no sessions.
 
 ## 7. Launch and verify
 
@@ -416,8 +425,8 @@ This proves the install starts a window on a machine with no desktop. Use an iso
 ```bash
 sudo apt install -y xvfb xauth dbus libglib2.0-bin xdotool   # Debian/Ubuntu names; elsewhere: Xvfb (xvfb-run), xauth, dbus-run-session, gdbus, gapplication, xdotool
 HELIOS_CMD=/usr/bin/helios            # or /home/<user>/helios/scripts/helios
-export HOME="$(mktemp -d)"
-export GDK_BACKEND=x11 GSK_RENDERER=cairo
+(
+export HOME="$(mktemp -d)" GDK_BACKEND=x11 GSK_RENDERER=cairo
 xvfb-run -a python3 -c 'import gi; gi.require_version("Gtk","4.0"); from gi.repository import Gtk; assert Gtk.init_check()' && echo DISPLAY_OK
 xvfb-run -a dbus-run-session -- bash -c '
   "$1" >"$HOME/helios.out" 2>&1 &
@@ -425,13 +434,16 @@ xvfb-run -a dbus-run-session -- bash -c '
   sleep 12
   gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.ListNames | grep -o "dev.norvi.Helios"
   xdotool search --name "^Helios$" | head -n 1
-  gapplication action dev.norvi.Helios quit
+  gapplication action dev.norvi.Helios quit || kill "$app"
+  for i in $(seq 10); do kill -0 "$app" 2>/dev/null || break; sleep 1; done
+  kill "$app" 2>/dev/null
   wait "$app"; echo "exit=$?"
 ' _ "$HELIOS_CMD"
 head -n 3 "$HOME/helios.out"; ls "$HOME/.helios/logs"
+)
 ```
 
-Expected: `DISPLAY_OK`, then `dev.norvi.Helios`, a numeric X window id, `exit=0`, then the first log lines and `helios.log`. If the quit call fails, `kill "$app"` instead; `wait` then reports 143, which is the signal, not a fault. The isolated `HOME` hides `~/.local/bin` and the other home-relative search steps, so `claude` is found only through `PATH`; that is fine for a smoke test because the window opens without it.
+Expected: `DISPLAY_OK`, then `dev.norvi.Helios`, a numeric X window id, `exit=0`, then the first log lines and `helios.log`. `exit=143` means Helios was still running 10 s after the quit call (the name was not on the bus yet, so `gapplication` exited 1, or the action was accepted but the process did not exit) and was sent SIGTERM; the `dev.norvi.Helios` and window-id lines above still say whether it started. The script always terminates, so a shell tool never times out on it. The parentheses keep the temporary `HOME`, `GDK_BACKEND` and `GSK_RENDERER` out of the rest of your shell: section 12 line 5 searches `$HOME/.local/bin` and `$HOME/.local/share/claude/versions` with `~/.local/bin` stripped from `PATH`, and line 8 reads `$HOME/.helios/ui-state.json`, so both must run against the person's real `HOME`; sections 5.3 and 6.1 write there too. The isolated `HOME` hides `~/.local/bin` and the other home-relative search steps, so `claude` is found only through `PATH`; that is fine for a smoke test because the window opens without it.
 
 Log lines on stderr have the form `HH:MM:SS LEVEL   helios.<module>: message`; the file adds the date (`YYYY-MM-DD HH:MM:SS ...`). Among the first INFO lines from `helios.window` in a fresh HOME:
 
@@ -452,12 +464,14 @@ There is no `--version`. Use one of:
 ```bash
 dpkg-query -W helios                                                    # APT
 python3 -c "import helios; print(helios.__version__)"                   # APT (module on the system path)
-PYTHONPATH=src python3 -c "import helios; print(helios.__version__)"    # source checkout, from its root
+PYTHONPATH=~/helios/src python3 -c "import helios; print(helios.__version__)"    # source checkout
 ```
 
-Expected: `helios	0.99.0` from `dpkg-query`, `0.99.0` from the other two. `man helios` is also installed by the package.
+Expected: `helios	0.99.1` from `dpkg-query`, `0.99.1` from the other two. `man helios` is also installed by the package.
 
 ## 8. Reference
+
+Sections 8–11 are reference and recovery; the procedure continues at section 12.
 
 ### 8.1 Permission modes
 
@@ -641,7 +655,7 @@ sudo apt remove -y helios
 dpkg -s helios 2>&1 | head -n 1
 ```
 
-Expected: `dpkg-query: package 'helios' is not installed and no information is available`. The package ships no conffiles, so `remove` and `purge` leave the same state. The system packages it depended on stay unless you `sudo apt autoremove`.
+Expected: `dpkg-query: package 'helios' is not installed and no information is available`. The package ships no conffiles, so `remove` and `purge` leave the same state. The system packages it depended on stay unless you `sudo apt autoremove`. The 7.2 helpers are not dependencies; if they were installed only for the smoke test: `sudo apt remove --autoremove -y xvfb xauth xdotool` (leave `dbus` and `libglib2.0-bin`: the base system and 7.1's `gdbus`/`gapplication` use them).
 
 Source: delete the checkout and, if `install-desktop.sh` was run:
 
@@ -670,28 +684,40 @@ rm -rf ~/.helios ~/.local/share/helios ~/.cache/helios
 
 ## 12. Verification checklist
 
-Run top to bottom on the installed machine, in a terminal, as the person. Each line prints one token; stop at the first missing one.
+Run top to bottom on the installed machine, in a terminal, as the person. Each line prints one token; stop at the first missing one. 12.2 continues in the same shell as 12.1 (it uses `H` from line 1).
+
+### 12.1 Any machine
 
 ```bash
-set -u
 H=${HELIOS_CMD:-/usr/bin/helios}     # checkout: H=/home/<user>/helios/scripts/helios and export PYTHONPATH=/home/<user>/helios/src
 test -x "$H" && echo 1_BINARY_OK
 dpkg-query -W helios 2>/dev/null || python3 -c "import helios; print('helios', helios.__version__)"
 python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' && echo 2_PYTHON_OK
 python3 -c 'from helios.deps import check_runtime_versions as c; assert c() == [], c(); print("3_LIBS_OK")'
 command -v git >/dev/null && echo 4_GIT_OK
-C=$(env -i HOME="$HOME" PATH=/usr/local/bin:/usr/bin:/bin PYTHONPATH="${PYTHONPATH:-}" python3 -c "from helios.backend.claude_binary import find_claude_binary; b = find_claude_binary(); print('5_CLAUDE_FOUND', b); print(b.path)" | tee /dev/stderr | tail -n 1)
+C=$(env -i HOME="$HOME" PATH=/usr/local/bin:/usr/bin:/bin PYTHONPATH="${PYTHONPATH:-}" python3 -c "import sys; from helios.backend.claude_binary import find_claude_binary; b = find_claude_binary(); print('5_CLAUDE_FOUND', b, file=sys.stderr); print(b.path)")
 "$C" --help 2>&1 | grep -q -- '--max-budget-usd' && echo "6_CLAUDE_VERSION $("$C" --version)"
 "$C" auth status --json | grep -q '"loggedIn": *true' && echo 7_CLAUDE_LOGGED_IN
 python3 -c 'import json, pathlib, os; d = json.loads((pathlib.Path.home()/".helios"/"ui-state.json").read_text()); c = d.get("default_cwd", ""); assert c and os.path.isdir(c) and os.path.realpath(c) != os.path.realpath(os.path.expanduser("~")), c; print("8_DEFAULT_CWD_OK", c, d.get("permission_mode", "default"), d.get("permission_mode_confirmed", False))'
 git -C "$(python3 -c 'import json, pathlib; print(json.loads((pathlib.Path.home()/".helios"/"ui-state.json").read_text())["default_cwd"])')" rev-parse --show-toplevel >/dev/null && echo 9_GIT_REPO_OK
-setsid -f "$H" >/dev/null 2>&1; sleep 10
+```
+
+Expected, in order: `1_BINARY_OK`, `helios	0.99.1` (or `helios 0.99.1`), `2_PYTHON_OK`, `3_LIBS_OK`, `4_GIT_OK`, `5_CLAUDE_FOUND <path> (via ...)` (printed on stderr; the path alone goes to stdout and into `C`, so lines 6 and 7 test the binary Helios will run, not whatever `claude` is on the agent's `PATH`), `6_CLAUDE_VERSION 2.1.217` or newer, `7_CLAUDE_LOGGED_IN`, `8_DEFAULT_CWD_OK <path> <mode> False` (`True` only if the person has already used Settings → "Save chat defaults"), `9_GIT_REPO_OK`. Line 7 is the one the agent cannot fix alone: hand `claude auth login --claudeai` (or `--console`) back to the person and re-run from line 7. Line 9 is advisory (Rewind only). Optional providers: `codex login status` printing `logged in` with exit 0 (5.2), and `stat -c '%a' ~/.helios/openrouter.key` printing `600` plus the `key-ok` check (5.3).
+
+### 12.2 Desktop session only (7.1)
+
+On a headless machine stop after 12.1 and use 7.2 instead; line 11 does not apply there because that recipe runs in an isolated `HOME`. Helios must not be running when the launch line starts (7.1 ends with its quit): a second invocation only raises the existing window and writes nothing to `$OUT`, so the line before it quits any instance that is still up.
+
+```bash
+[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && echo DISPLAY_OK || echo NO_DISPLAY_USE_7_2
+gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.ListNames | grep -q dev.norvi.Helios && { gapplication action dev.norvi.Helios quit; sleep 2; }   # single-instance app: a running window would swallow the launch below
+OUT=$(mktemp); setsid -f "$H" >/dev/null 2>"$OUT"; sleep 10     # this run's log lines only (Helios logs to stderr too); GTK's "cannot open display" lands here instead of vanishing
 gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.ListNames | grep -q dev.norvi.Helios && echo 10_RUNNING_OK
 test -d "${CLAUDE_HOME:-$HOME/.claude}/projects/$(python3 -c 'import json, pathlib; print(str(pathlib.Path(json.loads((pathlib.Path.home()/".helios"/"ui-state.json").read_text())["default_cwd"]).expanduser()).replace("/", "-"))')" && echo 11_PROJECT_DIR_OK
-grep -E 'claude CLI .*; degraded: |model catalog: ' "${HELIOS_STATE_DIR:-$HOME/.helios}/logs/helios.log" | tail -n 3
-grep -c 'CRITICAL' "${HELIOS_STATE_DIR:-$HOME/.helios}/logs/helios.log" | grep -qx 0 && echo 12_NO_CRITICAL
+grep -E 'claude CLI .*; degraded: |model catalog: ' "$OUT" | tail -n 3
+grep -c 'CRITICAL helios' "$OUT" | grep -qx 0 && echo 12_NO_CRITICAL
 gapplication action dev.norvi.Helios quit; sleep 2
 ! gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.ListNames | grep -q dev.norvi.Helios && echo 13_QUIT_OK
 ```
 
-Expected, in order: `1_BINARY_OK`, `helios	0.99.0` (or `helios 0.99.0`), `2_PYTHON_OK`, `3_LIBS_OK`, `4_GIT_OK`, `5_CLAUDE_FOUND <path> (via ...)` (line 5 also sets `C` to that path, so lines 6 and 7 test the binary Helios will run, not whatever `claude` is on the agent's `PATH`), `6_CLAUDE_VERSION 2.1.217` or newer, `7_CLAUDE_LOGGED_IN`, `8_DEFAULT_CWD_OK <path> <mode> True`, `9_GIT_REPO_OK`, `10_RUNNING_OK`, `11_PROJECT_DIR_OK` (the startup in 6.3 created `~/.claude/projects/<encoded default_cwd>/`, which proves the configured directory was read and accepted), three log lines (`claude CLI <version>; degraded: nothing` and two `model catalog:` lines with `openai:` and `openrouter:` statuses), `12_NO_CRITICAL`, `13_QUIT_OK`. Line 7 is the one the agent cannot fix alone: hand `claude auth login --claudeai` (or `--console`) back to the person and re-run from line 7. Line 9 is advisory (Rewind only). Lines 10 to 13 need a desktop session (7.1); use the Xvfb recipe in 7.2 on a headless machine, where line 11 does not apply because that recipe runs in an isolated `HOME`. Optional providers: `codex login status` printing `logged in` with exit 0 (5.2), and `stat -c '%a' ~/.helios/openrouter.key` printing `600` plus the `key-ok` check (5.3).
+Expected, in order: `DISPLAY_OK`, `10_RUNNING_OK`, `11_PROJECT_DIR_OK` (the startup in 6.3 created `~/.claude/projects/<encoded default_cwd>/`, which proves the configured directory was read and accepted), three log lines (`claude CLI <version>; degraded: nothing` and two `model catalog:` lines with `openai:` and `openrouter:` statuses), `12_NO_CRITICAL`, `13_QUIT_OK`. `grep 'CRITICAL helios'` matches Helios's own log lines (`LEVEL helios.<module>:`) and not GLib's `Gtk-CRITICAL **:` noise; because it reads this run's stderr rather than `helios.log`, a CRITICAL from an earlier run cannot fail a re-run.

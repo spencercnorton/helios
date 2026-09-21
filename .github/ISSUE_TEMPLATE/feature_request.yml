@@ -33,7 +33,7 @@ body:
     attributes:
       label: Helios version
       description: App menu → About Helios, `dpkg -s helios | grep ^Version` (apt package), or `PYTHONPATH=src python3 -c 'import helios; print(helios.__version__)'` from a checkout. Tells us whether the change is already in a newer release.
-      placeholder: Helios 0.99.0
+      placeholder: Helios 0.x.y
   - type: textarea
     id: alternatives
     attributes:

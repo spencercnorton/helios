@@ -6,11 +6,12 @@
 
 <p align="center">
   <strong>The desktop that sees everything your coding agents do.</strong><br>
-  A native GTK4/libadwaita workbench for Claude Code, OpenAI Codex and OpenRouter models on Ubuntu.
+  A native GTK4/libadwaita workbench for Claude Code, OpenAI Codex and OpenRouter models on Linux.
 </p>
 
 <p align="center">
   <a href="https://github.com/spencercnorton/helios/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/spencercnorton/helios/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/spencercnorton/helios/releases"><img alt="Latest release" src="https://img.shields.io/github/v/tag/spencercnorton/helios?label=release&sort=semver"></a>
   <a href="https://apt.globalentry.systems"><img alt="APT repository" src="https://img.shields.io/badge/apt-Ubuntu%2026.04-e95420.svg?logo=ubuntu&logoColor=white"></a>
   <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-blue.svg"></a>
   <a href="https://buy.stripe.com/8x26oH2U44f65TRe574wM04"><img alt="Donate" src="https://img.shields.io/badge/donate-Stripe-635bff.svg?logo=stripe&logoColor=white"></a>
@@ -123,6 +124,7 @@ Python floor is not — an older interpreter fails at import, so check
 `python3 --version` first.
 
 ```bash
+# Debian/Ubuntu
 sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtksource-5 libgtksourceview-5-0 git python3-pil
 git clone https://github.com/spencercnorton/helios.git
 cd helios
@@ -130,10 +132,13 @@ cd helios
 ./scripts/install-desktop.sh     # optional: app-grid entry and icon
 ```
 
-`git` is for the clone and for Rewind checkpoints (the package recommends
-it); `python3-pil` is only needed by `install-desktop.sh`, which renders the
-icon sizes. `scripts/build-deb.sh` builds the same `.deb` the repository
-publishes — see [Development](#development) for its prerequisites.
+On other distributions install the same things under their own names:
+PyGObject with its cairo integration, GTK 4, libadwaita, GtkSourceView 5,
+`git` and Pillow. `git` is for the clone and for Rewind checkpoints (the
+package recommends it); `python3-pil` is only needed by `install-desktop.sh`,
+which renders the icon sizes. `scripts/build-deb.sh` builds the same `.deb`
+the repository publishes — see [Development](#development) for its
+prerequisites.
 
 ### Sign in to the agents
 
@@ -146,7 +151,7 @@ separately:
   Settings. The app-grid launcher does not read your shell profile, so if
   `claude` lives only on your terminal `PATH`, symlink it into `~/.local/bin`
   or set `HELIOS_CLAUDE_BINARY` on the launcher's `Exec` line.
-- **GPT** *(optional)* — the `codex` CLI
+- **GPT (OpenAI Codex)** *(optional)* — the `codex` CLI
   (`npm install -g --prefix ~/.local @openai/codex`), signed in with
   `codex login`, or paste an API key in Settings → Providers, which runs
   `codex login --with-api-key` for you. `OPENAI_API_KEY` in the environment is
@@ -211,7 +216,8 @@ as well.
 - Security reports: [private vulnerability reporting](https://github.com/spencercnorton/helios/security/advisories/new) — see [SECURITY.md](SECURITY.md).
 - Pull requests are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md) first —
   this repository is a release mirror, and accepted changes ship in the next
-  tagged release.
+  tagged release, whose notes and `.deb` are on the
+  [Releases](https://github.com/spencercnorton/helios/releases) page.
 - If Helios saves you time, you can [support its development](https://buy.stripe.com/8x26oH2U44f65TRe574wM04).
 
 ## Development
@@ -224,11 +230,12 @@ Expected: a final `N passed, M skipped in …s` line. With PyGObject installed
 this also runs the GTK widget tests, which need a display — run them under
 Xvfb with an isolated `HOME` as described in
 [CONTRIBUTING.md](CONTRIBUTING.md). CI runs the backend suite alone, with
-GTK hidden by a stub module:
+GTK hidden by a stub module (CI adds `-q` itself, which on top of the `-q`
+in `pyproject.toml` drops the summary line; leave it out here):
 
 ```bash
 mkdir -p ~/nogtk && printf 'raise ModuleNotFoundError("gtk hidden")\n' > ~/nogtk/gi.py
-PYTHONPATH=~/nogtk python3 -m pytest -q -p no:cacheprovider
+PYTHONPATH=~/nogtk python3 -m pytest -p no:cacheprovider
 ```
 
 Lint with the ruff version CI pins; a newer default rule set reports hundreds
@@ -250,6 +257,8 @@ scripts/build-deb.sh [outdir]
 
 Expected: `helios_<version>_all.deb` and `helios_<version>.tar.gz` in
 `dist/` (or `outdir`).
+
+Repository layout:
 
 ```
 src/helios/

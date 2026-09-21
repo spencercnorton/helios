@@ -36,8 +36,13 @@ Understanding the trust model helps you judge what is and is not a finding:
   `_PASS`, `CREDENTIAL`, `APIKEY`, `_KEY`, `_PWD`, `_PAT`, `JWT`,
   `AUTH_CONFIG`, `ASKPASS` or `KEYRING` is removed unless it is on that
   process's allow-list above; so are Helios's own `HELIOS_*` settings
-  variables (`HELIOS_STATE_DIR` passes through), the shared-context pane's
-  `APOLLO_SCRATCHPAD_URL`/`APOLLO_SCRATCHPAD_KEY`, and `GPG_AGENT_INFO`.
+  variables (`HELIOS_STATE_DIR` and `HELIOS_SESSION_POOL` pass through), the
+  two variables the optional shared-context pane reads
+  (`APOLLO_SCRATCHPAD_URL`/`APOLLO_SCRATCHPAD_KEY`, named for the
+  maintainer's own scratchpad service and listed in
+  `src/helios/backend/process/env_scrub.py`; unset and inert on a standard
+  install, where the pane only ever tries `http://127.0.0.1:9101`), and
+  `GPG_AGENT_INFO`.
   Names without those markers (for example `DATABASE_URL`) pass through.
   `SSH_AUTH_SOCK` is deliberately kept, so any session — *Bypass* above
   all — can ssh and push as you. Two optional integrations are also

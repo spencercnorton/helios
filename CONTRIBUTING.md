@@ -13,7 +13,11 @@ moves forward by a release. That has two consequences for contributors:
 - Pull requests are reviewed **here**, but they are not merged here. An
   accepted change is applied to the development tree and ships in the next
   tagged release; the pull request is then closed with a comment that names
-  that release and credits you.
+  that release, and the release notes credit you. Every commit on `main` is
+  a bot release commit — the public history is audited to contain nothing
+  else — so your name will not appear in `git log` or the Contributors
+  graph. The closed pull request, linked from that comment, is the durable
+  record of your contribution.
 - Please do not rebase your pull request onto anything but `main`.
 
 ## Before you start
