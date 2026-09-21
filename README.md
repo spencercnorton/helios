@@ -24,7 +24,7 @@
   </picture>
 </p>
 
-<p align="center"><sub>Every picture here is Helios on an Ubuntu desktop with its translucent sidebar on, driving an invented demonstration project; nothing personal appears in them.</sub></p>
+<p align="center"><sub>Every picture here is Helios on an Ubuntu desktop with its translucent sidebar on, driving an invented demonstration project; nothing personal appears in them, and the wallpapers are free Unsplash and Pexels photographs.</sub></p>
 
 Helios is named for the sun that, in the old stories, saw everything that
 happened on earth. That is the whole idea. Terminal agents are powerful and
@@ -60,6 +60,18 @@ when the CLI allows it and becomes the default for your next chat.
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/controls-dark.png">
     <img alt="The chat toolbar: the model picker switches from Opus to Sonnet, then the Execution panel opens and the reasoning slider moves to X-High and the permission mode changes from Ask to Accept edits; the toolbar reads Sonnet (latest) · Default · X-High · Accept edits" src="docs/screenshots/controls-light.png" width="900">
+  </picture>
+</p>
+
+**Wears your desktop's colours.** Helios is a libadwaita application, so it
+takes the accent colour from your system settings and follows it live — the
+selected session, the send button, the checks in the Execution panel all
+change with it — and the sidebar can be translucent over your wallpaper.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/accent-dark.png">
+    <img alt="The system accent colour is changed from orange to purple, blue, teal, green, yellow, red and pink while Helios is open; the selected session, the send button and the Execution panel's checked rows follow each change" src="docs/screenshots/accent-light.png" width="900">
   </picture>
 </p>
 
