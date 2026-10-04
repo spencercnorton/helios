@@ -10,7 +10,7 @@ Helios is a Python application (`helios` on APT for Ubuntu 26.04, or `scripts/he
 - [User guide](docs/user-guide.md): the application as the person uses it: sessions, providers, permissions, budgets, Rewind, settings and environment variables.
 - [README](README.md): what Helios is, screenshots, install paths, where data lives, and how to contribute or donate.
 - [Security policy](SECURITY.md): supported versions, how to report a vulnerability privately, and the trust model (key storage, permission modes are not a sandbox, no telemetry).
-- [Contributing](CONTRIBUTING.md): the release-mirror contribution model, development setup, test and lint commands, and PR expectations.
+- [Contributing](CONTRIBUTING.md): the contribution model, development setup, test and lint commands, and PR expectations.
 - [GTK4 gotchas](docs/gtk4-gotchas.md): PyGObject, GTK4 and libadwaita traps met while building Helios, with the fixes that held.
 
 ## Optional

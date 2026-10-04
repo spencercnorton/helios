@@ -5,20 +5,13 @@ the process is deliberately light — but a few things are fixed.
 
 ## How changes land
 
-This GitHub repository is a **release mirror**: every commit on `main` after
-the initial import is a tagged release built from a private development
-tree, and `main` only ever
-moves forward by a release. That has two consequences for contributors:
+Development happens in this repository. Pull requests target `main`; once
+CI passes and a maintainer has reviewed it, an accepted pull request is
+squash-merged, so it lands as one commit credited to you. A release is a
+`vX.Y.Z` tag on `main`: the Release workflow builds the `.deb` and publishes
+it with the tagged source, and [CHANGELOG.md](CHANGELOG.md) says what changed.
 
-- Pull requests are reviewed **here**, but they are not merged here. An
-  accepted change is applied to the development tree and ships in the next
-  tagged release; the pull request is then closed with a comment that names
-  that release, and the release notes credit you. Every commit on `main` is
-  a bot release commit — the public history is audited to contain nothing
-  else — so your name will not appear in `git log` or the Contributors
-  graph. The closed pull request, linked from that comment, is the durable
-  record of your contribution.
-- Please do not rebase your pull request onto anything but `main`.
+- Keep a pull request to one change, and rebase it onto `main` only.
 
 ## Before you start
 

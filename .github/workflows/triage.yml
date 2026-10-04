@@ -31,4 +31,4 @@ jobs:
       - name: Acknowledge a pull request
         if: github.event_name == 'pull_request_target'
         run: |
-          gh pr comment "$NUMBER" --repo "$REPO" --body "Thanks for the contribution. CI runs the backend suite on your branch; a maintainer reviews here. This repository is a release mirror, so accepted changes are applied to the development tree and ship in the next tagged release — this pull request is then closed with a reference to that release (see CONTRIBUTING.md)."
+          gh pr comment "$NUMBER" --repo "$REPO" --body "Thanks for the contribution. CI runs the backend suite on your branch; a maintainer reviews here. Accepted pull requests are squash-merged into main and ship in the next tagged release (see CONTRIBUTING.md)."

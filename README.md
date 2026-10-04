@@ -236,8 +236,7 @@ as well.
 - Bugs and feature requests: [open an issue](https://github.com/spencercnorton/helios/issues/new/choose).
 - Security reports: [private vulnerability reporting](https://github.com/spencercnorton/helios/security/advisories/new) — see [SECURITY.md](SECURITY.md).
 - Pull requests are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md) first —
-  this repository is a release mirror, and accepted changes ship in the next
-  tagged release, whose notes and `.deb` are on the
+  accepted changes ship in the next tagged release, whose notes and `.deb` are on the
   [Releases](https://github.com/spencercnorton/helios/releases) page.
 - If Helios saves you time, you can [support its development](https://buy.stripe.com/8x26oH2U44f65TRe574wM04).
 
