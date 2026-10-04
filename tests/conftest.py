@@ -53,6 +53,9 @@ os.environ["HOME"] = str(QUARANTINE)
 os.environ["USERPROFILE"] = str(QUARANTINE)  # Path.home() reads this on Windows
 os.environ["HELIOS_STATE_DIR"] = str(QUARANTINE / ".helios")
 os.environ["CLAUDE_HOME"] = str(QUARANTINE / ".claude")
+# Helios reads system-prompt.d and the session pool through these at import.
+os.environ["XDG_CONFIG_HOME"] = str(QUARANTINE / ".config")
+os.environ["XDG_DATA_HOME"] = str(QUARANTINE / ".local" / "share")
 (QUARANTINE / ".helios").mkdir(parents=True, exist_ok=True)
 (QUARANTINE / ".claude").mkdir(parents=True, exist_ok=True)
 

@@ -2,8 +2,8 @@
 
 Codex loads AGENTS.md through its native instruction hierarchy. Claude loads
 CLAUDE.md through its own hierarchy. Helios must never copy one provider's
-role document into another provider's user message: doing that caused the
-2026-08-03 GPT runaway.
+role document into another provider's user message: doing that once sent a
+GPT session into a runaway loop (2026-08-03).
 
 The compatibility helper now adds only the small, Helios-owned presentation
 policy. Codex App Server receives it as typed
@@ -23,6 +23,9 @@ _log = logging.getLogger("helios.codex-context")
 
 
 DEFAULT_MAX_CHARS = 0
+# Claude receives the extra prompt as ONE argv element, and Linux caps a single
+# argument at 128 KiB (MAX_ARG_STRLEN); past that every spawn fails with E2BIG.
+MAX_EXTRA_SYSTEM_PROMPT_BYTES = 64 * 1024
 PRESENTATION_POLICY = (
     "Helios presentation policy for this chat: During tool-using work, send at "
     "most one sentence per meaningful milestone; do not use progress updates "
@@ -38,20 +41,31 @@ def load_extra_system_prompt(config_home: str | None = None) -> str:
     Reads ``$XDG_CONFIG_HOME/helios/system-prompt.d/*.md`` (default
     ``~/.config``) in name order and joins the non-empty files with a blank
     line. This is how a site adds its own standing policy (a work tracker, a
-    house style) without patching Helios. An unreadable file is skipped with a
-    warning rather than failing the session.
+    house style) without patching Helios. An unreadable file, or one that
+    would take the total past :data:`MAX_EXTRA_SYSTEM_PROMPT_BYTES`, is skipped
+    with a warning rather than failing the session.
     """
 
     base = Path(config_home or os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
     parts = []
+    size = 0
     for path in sorted((base / "helios" / "system-prompt.d").glob("*.md")):
         try:
             text = path.read_text(encoding="utf-8").strip()
         except (OSError, UnicodeDecodeError) as e:
             _log.warning("skipping extra system prompt %s: %s", path, e)
             continue
-        if text:
-            parts.append(text)
+        if not text:
+            continue
+        added = len(text.encode("utf-8")) + (2 if parts else 0)
+        if size + added > MAX_EXTRA_SYSTEM_PROMPT_BYTES:
+            _log.warning(
+                "skipping extra system prompt %s: total would exceed %d bytes",
+                path, MAX_EXTRA_SYSTEM_PROMPT_BYTES,
+            )
+            continue
+        parts.append(text)
+        size += added
     return "\n\n".join(parts)
 
 

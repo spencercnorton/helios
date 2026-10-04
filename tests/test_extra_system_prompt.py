@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from helios.backend.codex_context import load_extra_system_prompt
+from helios.backend.codex_context import MAX_EXTRA_SYSTEM_PROMPT_BYTES, load_extra_system_prompt
 
 
 def test_absent_directory_adds_nothing(tmp_path):
@@ -21,6 +21,16 @@ def test_markdown_files_join_in_name_order(tmp_path):
     assert load_extra_system_prompt(str(tmp_path)) == (
         "Record progress on {the} ticket.\n\nWrite short commit messages."
     )
+
+
+def test_a_file_that_would_pass_the_size_cap_is_skipped(tmp_path):
+    d = tmp_path / "helios" / "system-prompt.d"
+    d.mkdir(parents=True)
+    (d / "10-small.md").write_text("keep me", encoding="utf-8")
+    (d / "20-huge.md").write_text("x" * MAX_EXTRA_SYSTEM_PROMPT_BYTES, encoding="utf-8")
+    (d / "30-small.md").write_text("me too", encoding="utf-8")
+
+    assert load_extra_system_prompt(str(tmp_path)) == "keep me\n\nme too"
 
 
 def test_xdg_config_home_is_the_default_root(tmp_path, monkeypatch):
