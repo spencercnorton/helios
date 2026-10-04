@@ -77,7 +77,7 @@ HOME_CWD = str(Path.home())
 
 def is_throwaway_cwd(cwd: str) -> bool:
     """One-shot agent working directories: anything under /tmp, or the
-    `_tmp_<session>_<repo>` clone dirs the multi-session MR workflow mandates.
+    `_tmp_<session>_<repo>` scratch clone dirs that agent workflows create.
     These produce single-transcript projects that are dead on arrival — the
     session list hides them behind the Temporary filter instead of letting
     each one pin a permanent row."""

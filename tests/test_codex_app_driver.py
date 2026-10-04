@@ -3393,7 +3393,7 @@ def test_failed_steer_clears_the_latch_before_requeueing(driver_factory):
 def test_declined_steer_keeps_its_place_ahead_of_messages_queued_in_flight(
     driver_factory,
 ):
-    """The reorder Jeeves caught: steer A in flight, submission B refused and
+    """The reorder review caught: steer A in flight, submission B refused and
     queued by the window, then A authoritatively declined. An append would
     deliver B before A; the head insert restores submission order. The guard
     guarantees the queue was empty when A dispatched, so head == A's original
