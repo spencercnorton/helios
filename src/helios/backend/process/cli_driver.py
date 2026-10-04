@@ -585,7 +585,7 @@ class ClaudeCliDriver(UserMessageQueueMixin, GObject.Object):
             "--autocompact", "auto",
             # Moves cwd/env/git-status out of the system prompt into the first
             # user message, so the cached prefix stops varying with them.
-            # Measured on the development workstation 2026-08-05: ~296 fewer prompt tokens/turn
+            # Measured on a development machine 2026-08-05: ~296 fewer prompt tokens/turn
             # (37,180 vs 37,476). Small, but free and never negative; it does
             # NOT address the ~20k re-created per respawn, which is
             # cache TTL rather than prompt volatility. Verified not to pollute

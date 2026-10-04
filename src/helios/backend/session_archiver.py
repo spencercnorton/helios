@@ -144,7 +144,7 @@ def summarize_with_haiku(session: Session) -> str:
                 "--max-budget-usd",
                 f"{SUMMARY_MAX_BUDGET_USD:g}",
                 # Scoped down to what summarising a transcript needs, the same
-                # way title generation was before. Measured on the development workstation
+                # way title generation was before. Measured on a development machine
                 # 2026-08-05: 34,377 prompt tokens with `--setting-sources
                 # user`, 23,965 with these three flags — 10,412 fewer (30%)
                 # for the same job. It also matters for trust: the tail is
