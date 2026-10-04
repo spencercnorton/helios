@@ -80,7 +80,7 @@ _SAMPLE_ENV = {
     # gpg agent socket — dropped as hygiene (not a GPG boundary).
     "GPG_AGENT_INFO": "/run/user/1000/gnupg/S.gpg-agent",
     # Helios-internal — always dropped
-    "APOLLO_SCRATCHPAD_KEY": "x",
+    "HELIOS_SCRATCHPAD_KEY": "x",
 }
 
 _UNRELATED_CREDENTIALS = {
@@ -250,11 +250,11 @@ def test_infisical_identity_is_scrubbed_for_housekeeping_and_codex_spawns():
     assert "INFISICAL_CLIENT_SECRET" in names_to_scrub(names)
 
 
-# --- operator-granted Norvi Tracker token (2026-08-22) ----------------------
+# --- operator-granted work-tracker token (2026-08-22) -----------------------
 
 
 def test_tracker_token_reaches_a_granted_session_but_nothing_else():
-    """A session can run `norvi-work`; it still gets no other credential."""
+    """A session can run the tracker CLI; it still gets no other credential."""
     from helios.backend.process.env_scrub import (
         CLAUDE_AUTH_ENV,
         NORVI_TRACKER_ENV,

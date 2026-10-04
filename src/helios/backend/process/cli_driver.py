@@ -55,7 +55,7 @@ from helios.backend.claude_binary import (
     supports_effort_flag,
     supports_forward_subagent_text,
 )
-from helios.backend.codex_context import TRACKER_POLICY
+from helios.backend.codex_context import EXTRA_SYSTEM_PROMPT
 from helios.backend.model_catalog import context_window_for
 from helios.backend.process.spend_accounting import SpendAccumulator
 from helios.backend.process.env_scrub import (
@@ -591,13 +591,13 @@ class ClaudeCliDriver(UserMessageQueueMixin, GObject.Object):
             # cache TTL rather than prompt volatility. Verified not to pollute
             # the --replay-user-messages stream.
             "--exclude-dynamic-system-prompt-sections",
-            # Claude reads CLAUDE.md natively, so this is the ONLY Helios-owned
-            # instruction channel it has — and the tracker grant in env_scrub is
-            # inert without it, because nothing else tells the session that
-            # `norvi-work` exists. A constant string, so it does not re-break
-            # the cached prefix the flag above just stabilised.
-            "--append-system-prompt", TRACKER_POLICY,
         ]
+        # Claude reads CLAUDE.md natively, so this is the ONLY Helios-owned
+        # instruction channel it has: the operator's system-prompt.d files,
+        # when there are any. A constant string, so it does not re-break the
+        # cached prefix the flag above just stabilised.
+        if EXTRA_SYSTEM_PROMPT:
+            argv += ["--append-system-prompt", EXTRA_SYSTEM_PROMPT]
         # Forward each child agent's own messages into the root stream, tagged
         # with `parent_tool_use_id`, so the Agent Dock can show what a subagent
         # is actually saying instead of a bare status square. Measured on

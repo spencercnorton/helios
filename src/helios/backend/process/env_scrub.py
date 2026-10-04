@@ -82,8 +82,8 @@ _log = logging.getLogger("helios.env-scrub")
 
 # Layer 1 — Helios-internal config/secret vars, meaningless to the child.
 HELIOS_INTERNAL_ENV = (
-    "APOLLO_SCRATCHPAD_KEY",  # secret — the shared-context pane's API key
-    "APOLLO_SCRATCHPAD_URL",  # internal endpoint
+    "HELIOS_SCRATCHPAD_KEY",  # secret — the shared-context pane's API key
+    "HELIOS_SCRATCHPAD_URL",  # the pane's endpoint
     "HELIOS_DEBUG",
     "HELIOS_LOG_LEVEL",
     "HELIOS_CLAUDE_BINARY",
@@ -133,7 +133,7 @@ CODEX_EXEC_ENV = frozenset({"CODEX_API_KEY"})
 #
 # Deliberately ONE bootstrap credential, not a pile of service tokens: with
 # this, the agent pulls GitLab / tracker / Portainer secrets from Infisical on
-# demand, so GITLAB_TOKEN, JIRA_API_KEY, APOLLO_SCRATCHPAD_KEY and friends stay
+# demand, so GITLAB_TOKEN, JIRA_API_KEY, HELIOS_SCRATCHPAD_KEY and friends stay
 # scrubbed by name. Widening this set is a policy decision, not a convenience —
 # add a secret here only when nothing can derive it from Infisical.
 #
@@ -168,27 +168,18 @@ INFISICAL_CONFIG_ENV = frozenset({"INFISICAL_API_URL"})
 # Everything a session needs to resolve a secret: the identity plus its target.
 INFISICAL_ENV = INFISICAL_WORKLOAD_ENV | INFISICAL_CONFIG_ENV
 
-# Operator-granted tracker credential (Spencer, 2026-08-22). Norvi Tracker
-# (OpenProject) is the estate's durable work record, and
-# Spencer wants a Helios session to reach it the way it reaches GitLab: read
-# current work, history, blockers and what a project even is, and record its
-# own checkpoints against the work package its objective names.
-#
-# The sanctioned client is the `norvi-work` CLI from the tracker gateway
-# repository, already installed on the workstation. Helios deliberately ships NO OpenProject client
-# of its own — `docs/helios-adapter.md` in that repo forbids a second
-# credential, API client, binding registry or outbox, and the gateway's write
-# path is allow-listed to `PATCH /work_packages/{id}` and `POST .../activities`
-# with no create and no delete. Forwarding the token rather than shipping a
-# client is what keeps that boundary intact.
+# Operator-granted tracker credential (2026-08-22). An optional work tracker
+# (OpenProject) is a durable work record, and a session may read current work,
+# history and blockers and record its own checkpoints against the work package
+# its objective names, through a tracker CLI the operator installs and
+# describes in a system-prompt.d file (see codex_context). Helios deliberately
+# ships no tracker client of its own: forwarding the token to that CLI keeps
+# the client, and whatever write limits it enforces, outside Helios.
 #
 # Same class of considered, greppable trust grant as SSH_AUTH_SOCK and the
 # Infisical pair, and it carries the same honest cost: a tool-capable session
-# CAN read this value, and today it is the `kleos` account key, which is an
-# ADMIN key. Nothing scopes an OpenProject API token — only a separate user
-# can — so a least-privilege tracker identity is still unprovisioned. The
-# gateway's own fixtures name that gap ("Least-privilege identity is not
-# provisioned"); narrowing this grant is that ticket's job, not this module's.
+# CAN read this value, and OpenProject API tokens carry their user's full
+# rights. Give the token to a least-privilege tracker user.
 #
 # Scoped to the INTERACTIVE session like INFISICAL_WORKLOAD_ENV: title
 # generation, session archival and the auth/mcp/version probes have no work to

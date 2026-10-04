@@ -535,7 +535,7 @@ def _run_bash(
         ["/bin/bash", "-c", command],
         cwd=cwd,
         # Same grant as the Claude and Codex sessions: this Bash tool is how an
-        # OpenRouter session reaches `norvi-work`.
+        # OpenRouter session reaches the optional work-tracker CLI.
         env=scrubbed_child_env(keep=NORVI_TRACKER_ENV),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,

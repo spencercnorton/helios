@@ -68,7 +68,7 @@ from helios.backend.project_perms import (
     execution_mode_restriction_reason,
 )
 from helios.backend.process.openrouter_transcript import OpenRouterTranscriptWriter
-from helios.backend.codex_context import TRACKER_POLICY
+from helios.backend.codex_context import EXTRA_SYSTEM_PROMPT
 from helios.backend.process.streaming import Block, StreamingAssistant
 from helios.backend.sensitive_text import scrub_sensitive
 from helios.backend.transcript import ToolResult
@@ -115,8 +115,9 @@ _SYSTEM_PROMPT = (
     "checkpoint_context to retain decisions, evidence and unfinished work. "
     "Compaction retains bounded verbatim user excerpts, not a semantic summary; "
     "use read_context to recover omitted constraints or earlier evidence instead "
-    "of guessing. Summarize what you did. "
-    + TRACKER_POLICY
+    "of guessing. Summarize what you did."
+    # Escaped: this template goes through str.format(cwd=...).
+    + ("\n\n" + EXTRA_SYSTEM_PROMPT.replace("{", "{{").replace("}", "}}") if EXTRA_SYSTEM_PROMPT else "")
 )
 
 
