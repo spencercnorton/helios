@@ -23,5 +23,7 @@ debian/helios/
 debian/.debhelper/
 debian/debhelper-build-stamp
 debian/*.substvars
+debian/*.debhelper
+debian/*.debhelper.log
 .pybuild/
 dist/
