@@ -16,4 +16,4 @@ Helios is a Python application (`helios` on APT for Ubuntu 26.04, or `scripts/he
 ## Optional
 
 - [Debian packaging](debian/): control, rules, man page and icon renderer that build the `helios` .deb.
-- [build-deb.sh](scripts/build-deb.sh): builds the .deb and source tarball from a checkout on Linux (`scripts/build-deb.sh [outdir]`).
+- [build.sh](scripts/build.sh): builds the .deb from a checkout on Linux (`scripts/build.sh [outdir]`).
