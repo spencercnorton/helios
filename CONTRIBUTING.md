@@ -70,7 +70,7 @@ printf 'raise ModuleNotFoundError("gtk hidden")\n' > "$HOME/nogtk/gi.py"
 PYTHONPATH="$HOME/nogtk" python3 -m pytest -p no:cacheprovider
 ```
 
-The last line is the summary, for example `1816 passed, 91 skipped in 18.9s`
+The last line is the summary, for example `1821 passed, 87 skipped`, then the run time
 (one fewer pass and one more skip on Python 3.11 or 3.12). Roughly 90 skips
 are expected; adding `-rs` to the command lists the reasons, and every one
 should read `gtk hidden` (on Python 3.11 or 3.12

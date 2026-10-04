@@ -6,7 +6,7 @@
 
 ## How it was tested
 
-<!-- Paste the summary line of `python3 -m pytest -p no:cacheprovider` with `gi` hidden (e.g. `1816 passed, 91 skipped`), plus the Xvfb run if the change touches widgets, main_window.py or a driver. Say which distro and library versions: `dpkg -l libgtk-4-1 libadwaita-1-0 libgtksourceview-5-0 | awk '/^ii/{print $2, $3}'`, and the claude / codex CLI versions when a driver is involved. -->
+<!-- Paste the summary line of `python3 -m pytest -p no:cacheprovider` with `gi` hidden (e.g. `1821 passed, 87 skipped`), plus the Xvfb run if the change touches widgets, main_window.py or a driver. Say which distro and library versions: `dpkg -l libgtk-4-1 libadwaita-1-0 libgtksourceview-5-0 | awk '/^ii/{print $2, $3}'`, and the claude / codex CLI versions when a driver is involved. -->
 
 ## Checklist
 
