@@ -1,13 +1,13 @@
 """Unified session list — the primary navigation surface.
 
 One merged, newest-first list of every session on this machine plus the
-other hosts' sessions from the shared iCloud pool. The old per-cwd "project"
+other hosts' sessions from the shared session pool. The old per-cwd "project"
 level is gone as navigation (it collapsed: ~70% of sessions live in the
-/home/<user> catch-all, and the MR workflow's `_tmp_*` clone dirs made the
+/home/<user> catch-all, and throwaway `_tmp_*` clone dirs made the
 rest noise) — a session's project dir is now just metadata:
 
   * host chip — pool sessions show their origin host (read-only)
-  * the local cwd is not shown on the row (per Spencer); it stays available
+  * the local cwd is not shown on the row by design; it stays available
     via the per-cwd filter choices and the row's right-click "Copy folder path"
 
 A filter dropdown (All / This machine / per-cwd labels / per-host /
@@ -753,8 +753,8 @@ class SessionList(Gtk.Box):
         """Pre-LLM fallback: pull each session's first-user-message text out of
         the JSONL so rows show *something* before/instead of LLM titles.
 
-        Runs on a BACKGROUND THREAD: pooled sessions live on a soft
-        CIFS/iCloud mount where each open can take a second or more. Row label
+        Runs on a BACKGROUND THREAD: pooled sessions usually live on a
+        network mount where each open can take a second or more. Row label
         updates are marshalled back to the main thread via idle_add."""
         pending = [s for s in sessions if not self._title_store.get(s.session_id)]
         if not pending:
@@ -1152,7 +1152,7 @@ class _SessionRow(Gtk.ListBoxRow):
 
         # Host chip for pool rows (another machine's archive, read-only) — which
         # host it came from. The local-cwd/worktree chip is intentionally not
-        # shown (per Spencer): the full cwd is on the row tooltip + the filter.
+        # shown by design: the full cwd is on the row tooltip + the filter.
         if ro and show_host_chip:
             title_row.append(_chip(session.project.origin, icon="network-server-symbolic",
                                    tooltip=f"Session from {session.project.origin} (shared pool) — view only"))

@@ -2,8 +2,8 @@
 
 Codex loads AGENTS.md through its native instruction hierarchy. Claude loads
 CLAUDE.md through its own hierarchy. Helios must never copy one provider's
-role document into another provider's user message: doing that caused the
-2026-08-03 GPT runaway.
+role document into another provider's user message: doing that once sent a
+GPT session into a runaway loop (2026-08-03).
 
 The compatibility helper now adds only the small, Helios-owned presentation
 policy. Codex App Server receives it as typed
@@ -15,10 +15,17 @@ wrapper until they gain an equivalent native channel.
 
 from __future__ import annotations
 
+import logging
 import os
+from pathlib import Path
+
+_log = logging.getLogger("helios.codex-context")
 
 
 DEFAULT_MAX_CHARS = 0
+# Claude receives the extra prompt as ONE argv element, and Linux caps a single
+# argument at 128 KiB (MAX_ARG_STRLEN); past that every spawn fails with E2BIG.
+MAX_EXTRA_SYSTEM_PROMPT_BYTES = 64 * 1024
 PRESENTATION_POLICY = (
     "Helios presentation policy for this chat: During tool-using work, send at "
     "most one sentence per meaningful milestone; do not use progress updates "
@@ -26,39 +33,47 @@ PRESENTATION_POLICY = (
     "final response concise by default, while retaining material safety "
     "warnings, blockers, unresolved risks, and decisions the user must make."
 )
-# Norvi Tracker is the estate's durable work record, and a session should reach
-# it the way it reaches GitLab (Spencer, 2026-08-22). This is Helios-owned
-# policy, not a copied provider role document, so every provider gets the same
-# string: Claude via --append-system-prompt, Codex via typed application
-# context, and OpenRouter in its system prompt.
-#
-# It names the `norvi-work` CLI rather than the HTTP API on purpose. That CLI
-# (from the tracker gateway repository) is the estate's only sanctioned OpenProject
-# client; its write path reaches `PATCH /work_packages/{id}` and
-# `POST .../activities` and nothing else, so a session cannot create or delete
-# work packages even though the forwarded token would allow it.
-#
-# The binding is the objective, which already ships to every provider in the
-# goal envelope (`session_goals.wrap_user_prompt`) — a ticket reference the user typed
-# there is the whole mechanism, which is why no binding UI exists.
-# The instance is named by NORVI_TRACKER_URL in the session environment; the
-# public build carries no estate hostname.
-TRACKER_URL = os.environ.get("NORVI_TRACKER_URL", "").strip()
-TRACKER_POLICY = (
-    "Norvi Tracker (OpenProject"
-    + (f" at {TRACKER_URL}" if TRACKER_URL else "")
-    + ") is the durable "
-    "record of work across this estate — current work, history, blockers, and "
-    "what a project is for. Read it with the already-authenticated `norvi-work` "
-    "CLI: `norvi-work inbox` for open work and next actions, `norvi-work "
-    "context OP#<id>` for one package's objective, accepted state, blockers and "
-    "evidence. Consult it before assuming a task is new. When this chat's "
-    "objective names an OP#<id>, that work package is this work's record: read "
-    "it before starting, and record meaningful checkpoints, blockers and "
-    "findings against it with `norvi-work checkpoint`. Do not open work "
-    "packages for routine chat, and never write to the tracker by any other "
-    "route."
-)
+
+
+def load_extra_system_prompt(config_home: str | None = None) -> str:
+    """Operator-supplied instructions every provider gets, or "" when none.
+
+    Reads ``$XDG_CONFIG_HOME/helios/system-prompt.d/*.md`` (default
+    ``~/.config``) in name order and joins the non-empty files with a blank
+    line. This is how a site adds its own standing policy (a work tracker, a
+    house style) without patching Helios. An unreadable file, or one that
+    would take the total past :data:`MAX_EXTRA_SYSTEM_PROMPT_BYTES`, is skipped
+    with a warning rather than failing the session.
+    """
+
+    base = Path(config_home or os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    parts = []
+    size = 0
+    for path in sorted((base / "helios" / "system-prompt.d").glob("*.md")):
+        try:
+            text = path.read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeDecodeError) as e:
+            _log.warning("skipping extra system prompt %s: %s", path, e)
+            continue
+        if not text:
+            continue
+        added = len(text.encode("utf-8")) + (2 if parts else 0)
+        if size + added > MAX_EXTRA_SYSTEM_PROMPT_BYTES:
+            _log.warning(
+                "skipping extra system prompt %s: total would exceed %d bytes",
+                path, MAX_EXTRA_SYSTEM_PROMPT_BYTES,
+            )
+            continue
+        parts.append(text)
+        size += added
+    return "\n\n".join(parts)
+
+
+# Read once per process: every provider gets the same constant string (Claude
+# via --append-system-prompt, Codex via typed application context, OpenRouter
+# in its system prompt), so the cached prompt prefix stays stable.
+EXTRA_SYSTEM_PROMPT = load_extra_system_prompt()
+
 EXECUTION_PLAN_POLICY = (
     "For multi-step research, implementation, debugging, or operational work, "
     "create a concrete native execution plan before the first write or other "
@@ -88,8 +103,7 @@ CODEX_DEVELOPER_INSTRUCTIONS = (
     + EXECUTION_PLAN_POLICY
     + " "
     + ASK_OR_CONTINUE_POLICY
-    + " "
-    + TRACKER_POLICY
+    + (" " + EXTRA_SYSTEM_PROMPT if EXTRA_SYSTEM_PROMPT else "")
 )
 
 

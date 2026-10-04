@@ -1756,7 +1756,7 @@ def test_fresh_chat_default_prefers_a_real_project_over_throwaways(monkeypatch):
         lambda: [
             _proj(home, mtime=500.0),  # newest, but read-only
             _proj("/tmp/scratch", mtime=400.0),  # throwaway
-            _proj("/home/alice/Kleos/_tmp_abc_repo", mtime=300.0),  # throwaway
+            _proj("/home/alice/src/_tmp_abc_repo", mtime=300.0),  # throwaway
             _proj("/home/alice/remote-thing", read_only=True, mtime=200.0),
             _proj("/home/alice/helios", mtime=100.0),  # the real answer
         ],

@@ -490,7 +490,7 @@ class SettingsDialog(Adw.PreferencesDialog):
         pool_row.set_title("Show other machines' sessions")
         pool_row.set_subtitle(
             "List read-only sessions synced from other hosts in the shared "
-            "iCloud pool (view-only — they can't be resumed here)."
+            "session pool (view-only — they can't be resumed here)."
         )
         pool_row.set_active(bool(ui.get("show_pool_sessions", False)))
 

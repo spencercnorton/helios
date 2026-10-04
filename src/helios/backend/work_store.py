@@ -1566,7 +1566,7 @@ class WorkStore:
         stuck Work by hand without restarting a Helios that is otherwise fine.
         """
 
-        # ponytail: "startup means orphaned" relies on GApplication uniqueness.
+        # Known limit: "startup means orphaned" relies on GApplication uniqueness.
         # If Helios ever runs two instances against one work.db, this needs a
         # recorded owner (host pid + boot id) to check instead.
         now = _now()

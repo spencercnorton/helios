@@ -7,7 +7,7 @@ dominates; the one write is the header's hand-off button, which publishes
 the currently open session (MainWindow supplies it via set_handoff_target
 and owns the dialog — the pane only emits `handoff-requested`).
 
-All network I/O runs on daemon threads (the service is on the tailnet; a
+All network I/O runs on daemon threads (the service is on the network; a
 down service must never hitch the UI). Results marshal back via idle_add,
 guarded by a generation counter.
 """

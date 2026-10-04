@@ -1,7 +1,7 @@
 """Build shared-scratchpad handoff payloads from a local Helios session.
 
 "Hand off this session" writes one `handoff/<slug>-<date>` entry to the
-shared scratchpad so any Helios session on the tailnet can pick the work up:
+shared scratchpad so any Helios session on your network can pick the work up:
 where it ran, how to resume it, and the tail of the conversation. This module
 is the GTK-free payload side; the dialog (widgets/handoff_dialog.py) owns the
 UI and the actual network write (backend/scratchpad.py).

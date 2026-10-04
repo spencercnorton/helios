@@ -134,7 +134,7 @@ first if you prefer to do those two steps by hand — it is short. Only Ubuntu
 26.04 (`resolute`) on amd64 is published today — `setup.sh` refuses other
 releases and architectures. The package itself is architecture-independent,
 so on arm64 run from source (below) or build the `.deb` yourself with
-`scripts/build-deb.sh`.
+`scripts/build.sh`.
 
 ### Other distributions — run from source
 
@@ -157,7 +157,7 @@ On other distributions install the same things under their own names:
 PyGObject with its cairo integration, GTK 4, libadwaita, GtkSourceView 5,
 `git` and Pillow. `git` is for the clone and for Rewind checkpoints (the
 package recommends it); `python3-pil` is only needed by `install-desktop.sh`,
-which renders the icon sizes. `scripts/build-deb.sh` builds the same `.deb`
+which renders the icon sizes. `scripts/build.sh` builds the same `.deb`
 the repository publishes — see [Development](#development) for its
 prerequisites.
 
@@ -236,8 +236,7 @@ as well.
 - Bugs and feature requests: [open an issue](https://github.com/spencercnorton/helios/issues/new/choose).
 - Security reports: [private vulnerability reporting](https://github.com/spencercnorton/helios/security/advisories/new) — see [SECURITY.md](SECURITY.md).
 - Pull requests are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md) first —
-  this repository is a release mirror, and accepted changes ship in the next
-  tagged release, whose notes and `.deb` are on the
+  accepted changes ship in the next tagged release, whose notes and `.deb` are on the
   [Releases](https://github.com/spencercnorton/helios/releases) page.
 - If Helios saves you time, you can [support its development](https://buy.stripe.com/8x26oH2U44f65TRe574wM04).
 
@@ -268,16 +267,15 @@ pip install ruff==0.15.20 && ruff check .
 
 Expected: `All checks passed!`
 
-The Debian package (Linux only — the script needs GNU `date -d` and
-`tar --sort`):
+The Debian package (Linux only — the script needs GNU `date -d`; `lintian`,
+if installed, must pass with no errors or warnings):
 
 ```bash
 sudo apt install build-essential debhelper dh-python pybuild-plugin-pyproject python3-all python3-pil python3-setuptools
-scripts/build-deb.sh [outdir]
+scripts/build.sh [outdir]
 ```
 
-Expected: `helios_<version>_all.deb` and `helios_<version>.tar.gz` in
-`dist/` (or `outdir`).
+Expected: `helios_<version>_all.deb` in `dist/` (or `outdir`).
 
 Repository layout:
 
@@ -289,7 +287,7 @@ src/helios/
 ├── widgets/                 # GTK4/libadwaita widgets
 └── resources/               # CSS and symbolic icons
 tests/                       # pytest; GTK tests skip when gi is missing — most still need a display (see Development)
-scripts/                     # helios launcher, install-desktop.sh, build-deb.sh, plus optional router/estate/eval helpers
+scripts/                     # helios launcher, install-desktop.sh, build.sh, plus optional router/estate/eval helpers
 data/                        # desktop entry template and app icon
 debian/                      # the package apt installs
 docs/                        # user guide, agent setup, GTK4 gotchas, screenshots, pinned Codex App Server protocol manifest
@@ -309,5 +307,11 @@ docs/                        # user guide, agent setup, GTK4 gotchas, screenshot
   <a href="https://github.com/spencercnorton/helios">Helios</a> ·
   <a href="https://github.com/spencercnorton/bitagent">BitAgent</a> ·
   <a href="https://github.com/spencercnorton/xnote">XNote</a> ·
+  <a href="https://github.com/spencercnorton/xnote-placement">XNote Placement</a> ·
+  <a href="https://github.com/spencercnorton/snipsnap">SnipSnap</a> ·
+  <a href="https://github.com/spencercnorton/conductor">Conductor</a> ·
+  <a href="https://github.com/spencercnorton/norvi-os">NorviOS</a> ·
+  <a href="https://github.com/spencercnorton/indigo">Indigo</a> ·
+  <a href="https://github.com/spencercnorton/roadtrack">Road Track</a> ·
   <a href="https://norvitech.com">norvitech.com</a>
 </p>

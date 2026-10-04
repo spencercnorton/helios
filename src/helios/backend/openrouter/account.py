@@ -18,7 +18,7 @@ expensive, so both are made and the row survives losing either one:
   headline, since that is the number that actually determines whether the
   next request works.
 
-# ponytail: usage_daily/usage_weekly/usage_monthly and byok_usage are read
+# Simplification: usage_daily/usage_weekly/usage_monthly and byok_usage are read
 # by nothing here — they would feed a rolling-window rate tracker, which is
 # explicitly out of scope for this pass (gap 18 asks for the balance and
 # is_free_tier, not a tracker). limit_remaining is skipped too: on every
@@ -53,7 +53,7 @@ _TIMEOUT = 10.0
 _MAX_BODY = 64 * 1024
 
 # OpenRouter's documented ceiling for a free-tier key on ":free" models —
-# not tracked here (see the ponytail note above), just surfaced.
+# not tracked here (see the note above), just surfaced.
 # The per-minute ceiling is fixed; the DAILY one is not — OpenRouter grants
 # 1,000/day once an account has bought $10 of credit, so a flat "50/day"
 # is wrong for exactly the users who paid to leave it behind (

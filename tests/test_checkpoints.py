@@ -432,7 +432,7 @@ def test_removed_files_are_moved_aside_not_destroyed(repo):
 
 
 def test_a_renamed_ignored_file_is_recoverable(repo):
-    """Jeeves blocker: `.env` -> `.env.local`, modified, un-ignored.
+    """Review blocker: `.env` -> `.env.local`, modified, un-ignored.
 
     `covers('.env.local')` is true — it is a different path — and the edit
     gives it a fresh mtime, so both guards pass it through as "created". The
@@ -458,7 +458,7 @@ def test_a_renamed_ignored_file_is_recoverable(repo):
 
 
 def test_a_truncated_ignored_list_refuses_every_deletion(repo, monkeypatch):
-    """Jeeves blocker: an incomplete record must not be treated as complete.
+    """Review blocker: an incomplete record must not be treated as complete.
 
     Past the cap, a pre-existing ignored file that the agent edits and
     un-ignores looks exactly like a new file to both guards.
@@ -486,7 +486,7 @@ def test_complete_coverage_still_allows_deletion(repo):
 
 
 def test_a_pathspec_magic_filename_cannot_restore_unticked_files(repo):
-    """Jeeves blocker: paths are pathspecs to git even after `--`.
+    """Review blocker: paths are pathspecs to git even after `--`.
 
     A repository may legally contain a file named `:(glob)**`. Restoring that
     one ticked file must not drag every path it globs along with it, silently

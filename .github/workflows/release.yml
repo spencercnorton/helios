@@ -1,0 +1,87 @@
+# On a vX.Y.Z tag: run CI, build the .deb on Ubuntu 26.04, and publish a GitHub
+# Release with the package, the exact tagged source (git archive) and
+# SHA256SUMS.txt. No secrets beyond the job token; GitHub-owned actions pinned
+# by commit.
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+  build:
+    needs: checks
+    container: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - name: Container prerequisites
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends git ca-certificates build-essential \
+            debhelper dh-python pybuild-plugin-pyproject python3-all python3-pil python3-setuptools lintian
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prove stable tag and source
+        run: |
+          git config --system --add safe.directory "$GITHUB_WORKSPACE"
+          printf '%s\n' "$RELEASE_TAG" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          git merge-base --is-ancestor HEAD origin/main
+          VERSION=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' src/helios/__init__.py)
+          test "$RELEASE_TAG" = "v$VERSION"
+          grep -q "^version = \"$VERSION\"$" pyproject.toml
+          grep -q "^## $VERSION — " CHANGELOG.md
+      - name: Build the package
+        run: |
+          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          export SOURCE_DATE_EPOCH
+          scripts/build.sh dist
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: helios-deb
+          path: dist/*.deb
+          if-no-files-found: error
+          retention-days: 14
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Create release asset directory
+        run: mkdir -p release-assets
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: helios-deb
+          path: release-assets
+      - name: Package the exact public source and checksum everything
+        run: |
+          git archive --format=tar.gz --prefix=source/ HEAD > release-assets/source.tar.gz
+          cd release-assets
+          sha256sum -- * > SHA256SUMS.txt
+      - name: Publish immutable release artifacts
+        run: |
+          gh release create "$RELEASE_TAG" release-assets/* \
+            --verify-tag --title "$RELEASE_TAG" --generate-notes

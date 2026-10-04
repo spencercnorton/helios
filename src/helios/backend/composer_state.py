@@ -31,7 +31,7 @@ class DraftBook:
     A blank stash EVICTS rather than stores, so clearing the composer in one
     session does not resurrect a stale draft when you come back to it.
 
-    ponytail: in-memory only, no TTL and no cap — drafts die with the window,
+    Known limit: in-memory only, no TTL and no cap — drafts die with the window,
     and the book is bounded by how many conversations one window visits.
     Persist to ui-state if anyone asks for drafts to survive a restart.
     """

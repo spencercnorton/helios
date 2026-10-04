@@ -218,7 +218,7 @@ class TitleGenerator(GObject.Object):
         # _on_done, so the title cache stays the only persistent artifact.
         #
         # It is also scoped down to what naming a chat actually needs. Measured
-        # on the development workstation (2026-07-28), one title cost 33,152 prompt tokens: the
+        # on a development machine (2026-07-28), one title cost 33,152 prompt tokens: the
         # default agent system prompt, the 20KB global CLAUDE.md, and the tool
         # schemas of all 11 configured MCP servers. `--allowed-tools ""` stops
         # the model CALLING a tool; it does not stop the schemas being sent.

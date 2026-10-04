@@ -185,7 +185,7 @@ def test_duplicate_effort_signals_do_not_queue_duplicate_toasts():
     assert writes == []
     # Zero, not one: a successful effort change no longer toasts at all — the
     # toolbar's reasoning label is the confirmation, and a banner per change
-    # queued over the composer (Spencer, 2026-08-22).
+    # queued over the composer (2026-08-22).
     assert toasts == []
 
 

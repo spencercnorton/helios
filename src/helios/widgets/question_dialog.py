@@ -482,7 +482,7 @@ def _build_detail(detail: dict, *, scrollable: bool = True) -> Gtk.Widget:
             from helios.widgets.markdown import render_markdown
 
             body = render_markdown(text)
-        except Exception:  # ponytail: renderer optional, plain text is the floor
+        except Exception:  # renderer optional, plain text is the floor
             body = None
     elif kind == "diff":
         try:

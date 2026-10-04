@@ -12,7 +12,7 @@ two failure modes an index never had, and both are silent:
     JSONDecodeError, which `_turn_from_line` swallows, so the turn simply
     never appears. Hence test 3 — the one that actually earns its keep.
   * a truncated or replaced file makes the stored offset meaningless. Detected
-    by size only; see the ponytail comment in transcript.py for the ceiling.
+    by size only; see the known-limit comment in transcript.py for the ceiling.
 
 Binary iteration splits on b"\\n", and no multi-byte UTF-8 sequence can
 contain that byte, so the per-line decode(errors="replace") is equivalent to

@@ -108,10 +108,10 @@ _MEASURED = {
         "includedSkills": 23,
         "tokens": 3715,
         "skillFrontmatter": [
-            {"name": "ponytail", "source": "userSettings", "tokens": 279},
-            {"name": "resolve-estate-credential", "tokens": 208},
-            {"name": "ship-gitlab-mr", "tokens": 189},
-            {"name": "tandem", "tokens": 126},
+            {"name": "house-style", "source": "userSettings", "tokens": 279},
+            {"name": "fetch-credential", "tokens": 208},
+            {"name": "open-pull-request", "tokens": 189},
+            {"name": "release-notes", "tokens": 126},
         ],
     },
     "agents": [{"agentType": "gpt", "tokens": 328}, {"agentType": "implementer", "tokens": 230}],
@@ -128,11 +128,11 @@ _MEASURED = {
 
 
 def test_measured_details_keep_files_skills_agents_and_the_threshold():
-    """The 2.1.258 payload shape from docs/CLAUDE-PARITY-PLAN.md Probe 1."""
+    """The 2.1.258 ``/context`` payload shape."""
     details = cb.details_from_measured(_MEASURED)
     assert details is not None
     assert details.memory_files == (("/home/x/.claude/CLAUDE.md", 7913),)
-    assert details.skills[0] == ("ponytail", 279)
+    assert details.skills[0] == ("house-style", 279)
     assert details.skills_count == 23 and details.skills_total == 3715
     assert details.agents == (("gpt", 328), ("implementer", 230))
     assert details.tool_results == 1200 and details.attachments == 2767
@@ -141,7 +141,7 @@ def test_measured_details_keep_files_skills_agents_and_the_threshold():
 
     lines = cb.describe_details(details, 1000000, home="/home/x")
     assert lines[0].startswith("Memory files: 7,913 tokens — ~/.claude/CLAUDE.md 7,913")
-    assert "Skills: 23 loaded, 3,715 tokens — largest ponytail 279" in lines[1]
+    assert "Skills: 23 loaded, 3,715 tokens — largest house-style 279" in lines[1]
     assert lines[2] == "Custom agents: gpt 328, implementer 230"
     assert lines[3] == "Messages: 1,200 tool results · 2,767 attachments · 40 user"
     assert lines[4] == "Auto-compacts at 967,000 tokens (96% of the window)."

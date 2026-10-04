@@ -98,7 +98,7 @@ window.helios-glass {
 /* `:not(tooltip)` is load-bearing. A tooltip is its own Wayland surface, but its
    CSS node hangs off the window's, so a bare `> *` reaches it — and libadwaita
    puts the tooltip's plate on that very node (`tooltip.background`), with
-   nothing beneath it to repaint. Measured on the development workstation (GNOME 50 Wayland, GTK
+   nothing beneath it to repaint. Measured on a development machine (GNOME 50 Wayland, GTK
    4.22.4, gl and cairo alike): class off, the fill reads srgb(6,6,11) against a
    srgb(29,29,32) window; class on, the interior reads the window's own
    srgb(32,32,32) and only the 1px border survives — the session-row tooltip was

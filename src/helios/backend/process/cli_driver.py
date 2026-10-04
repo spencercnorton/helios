@@ -55,7 +55,7 @@ from helios.backend.claude_binary import (
     supports_effort_flag,
     supports_forward_subagent_text,
 )
-from helios.backend.codex_context import TRACKER_POLICY
+from helios.backend.codex_context import EXTRA_SYSTEM_PROMPT
 from helios.backend.model_catalog import context_window_for
 from helios.backend.process.spend_accounting import SpendAccumulator
 from helios.backend.process.env_scrub import (
@@ -313,7 +313,7 @@ class ClaudeCliDriver(UserMessageQueueMixin, GObject.Object):
         #: at the spawn site. A driver instance is one process (`start()`
         #: returns early once `_proc` is set, and `_proc` is never cleared), so
         #: "a respawn" means a NEW DRIVER, and the window drops this one.
-        #: ponytail: per-process, not per-Work. execution_attempts already has
+        #: Known limit: per-process, not per-Work. execution_attempts already has
         #: usage_json/cost_micro_usd for durable per-Work totals when after-
         #: the-fact analysis is wanted; the ticket's pain was live blindness.
         self._spend = SpendAccumulator()
@@ -585,19 +585,19 @@ class ClaudeCliDriver(UserMessageQueueMixin, GObject.Object):
             "--autocompact", "auto",
             # Moves cwd/env/git-status out of the system prompt into the first
             # user message, so the cached prefix stops varying with them.
-            # Measured on the development workstation 2026-08-05: ~296 fewer prompt tokens/turn
+            # Measured on a development machine 2026-08-05: ~296 fewer prompt tokens/turn
             # (37,180 vs 37,476). Small, but free and never negative; it does
             # NOT address the ~20k re-created per respawn, which is
             # cache TTL rather than prompt volatility. Verified not to pollute
             # the --replay-user-messages stream.
             "--exclude-dynamic-system-prompt-sections",
-            # Claude reads CLAUDE.md natively, so this is the ONLY Helios-owned
-            # instruction channel it has — and the tracker grant in env_scrub is
-            # inert without it, because nothing else tells the session that
-            # `norvi-work` exists. A constant string, so it does not re-break
-            # the cached prefix the flag above just stabilised.
-            "--append-system-prompt", TRACKER_POLICY,
         ]
+        # Claude reads CLAUDE.md natively, so this is the ONLY Helios-owned
+        # instruction channel it has: the operator's system-prompt.d files,
+        # when there are any. A constant string, so it does not re-break the
+        # cached prefix the flag above just stabilised.
+        if EXTRA_SYSTEM_PROMPT:
+            argv += ["--append-system-prompt", EXTRA_SYSTEM_PROMPT]
         # Forward each child agent's own messages into the root stream, tagged
         # with `parent_tool_use_id`, so the Agent Dock can show what a subagent
         # is actually saying instead of a bare status square. Measured on
@@ -3141,7 +3141,7 @@ def session_permission_rule(tool_name: str, raw_input: object) -> dict | None:
     if not name:
         return None
     if name != "Bash":
-        # ponytail: tool-wide for everything else. Read/Edit/Write rule content
+        # Simplification: tool-wide for everything else. Read/Edit/Write rule content
         # is a path-pattern dialect of Claude's own; deriving it here would
         # duplicate the matcher we are deliberately delegating to. Narrow these
         # per-tool only if a blanket session grant proves too coarse in use.

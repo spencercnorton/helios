@@ -4,15 +4,13 @@ from pathlib import Path
 import re
 import tomllib
 
-import pytest
-
 import helios
 
 _ROOT = Path(__file__).resolve().parents[1]
 _CHANGELOG = _ROOT / "CHANGELOG.md"
-# The public source tree ships without CHANGELOG.md (its history names private
-# infrastructure); these two checks are about the private release process.
-_needs_changelog = pytest.mark.skipif(not _CHANGELOG.exists(), reason="CHANGELOG.md is not part of this tree")
+# `## 0.99.7 — <date>` (the Release workflow checks this form) or the older
+# `## [0.99.6] — <date>`.
+_HEADING = r"(?m)^## \[?(\d+\.\d+\.\d+)\]? — "
 
 
 def _package_version() -> str:
@@ -24,7 +22,6 @@ def test_runtime_and_package_versions_match() -> None:
     assert helios.__version__ == _package_version()
 
 
-@_needs_changelog
 def test_changelog_leads_with_the_shipping_version() -> None:
     """v0.68.4 shipped with both version files still reading 0.68.3.
 
@@ -35,7 +32,7 @@ def test_changelog_leads_with_the_shipping_version() -> None:
     """
 
     changelog = _CHANGELOG.read_text(encoding="utf-8")
-    versions = re.findall(r"(?m)^## \[(\d+\.\d+\.\d+)\]", changelog)
+    versions = re.findall(_HEADING, changelog)
 
     assert versions, "CHANGELOG has no released version headings"
     assert versions[0] == _package_version(), (
@@ -44,12 +41,11 @@ def test_changelog_leads_with_the_shipping_version() -> None:
     )
 
 
-@_needs_changelog
 def test_changelog_versions_are_ordered_newest_first() -> None:
     changelog = _CHANGELOG.read_text(encoding="utf-8")
     versions = [
         tuple(int(p) for p in v.split("."))
-        for v in re.findall(r"(?m)^## \[(\d+\.\d+\.\d+)\]", changelog)
+        for v in re.findall(_HEADING, changelog)
     ]
 
     assert versions == sorted(versions, reverse=True), (

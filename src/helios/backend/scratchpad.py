@@ -1,14 +1,12 @@
-"""Client for the shared scratchpad — the network-wide shared context store
-(handoffs, repo analyses, infra investigations).
+"""Client for an optional shared scratchpad — a shared context store for agent
+sessions on several machines (handoffs, repo analyses, investigations).
 
-The scratchpad is the actual "single shared space" for every Claude instance
-on the tailnet: one HTTP service, written and read live. Helios mostly
+The scratchpad is one HTTP service, written and read live. Helios mostly
 *reads* it (listing + viewing entries); the one deliberate write is the
 "hand off this session" action (`write_entry`), which publishes a session's
 resume coordinates the same way the MCP `scratch_handoff` tool does.
 
-Transport mirrors the MCP shim (~/.claude/mcp/scratchpad/server.py): plain
-HTTP, optional X-API-Key header. stdlib urllib so Helios gains no new
+Transport: plain HTTP, optional X-API-Key header. stdlib urllib so Helios gains no new
 dependency. Every call here is blocking network I/O — callers must run them
 off the main loop.
 """
@@ -24,15 +22,14 @@ from dataclasses import dataclass, field
 
 from helios.backend.urlcheck import safe_http_url
 
-# The endpoint comes from the session environment (APOLLO_SCRATCHPAD_URL, the
-# same name the MCP shim reads); the built-in default is a local listener, so a
-# build with no estate configuration talks to nothing off-host. A bad override
-# (non-http scheme, schemeless) is clamped back to the default rather than fed
-# to urlopen.
+# The endpoint comes from HELIOS_SCRATCHPAD_URL; the built-in default is a
+# local listener, so a build with no configuration talks to nothing off-host.
+# A bad override (non-http scheme, schemeless) is clamped back to the default
+# rather than fed to urlopen.
 BASE_URL = safe_http_url(
-    os.environ.get("APOLLO_SCRATCHPAD_URL"), "http://127.0.0.1:9101"
+    os.environ.get("HELIOS_SCRATCHPAD_URL"), "http://127.0.0.1:9101"
 )
-API_KEY = os.environ.get("APOLLO_SCRATCHPAD_KEY", "")
+API_KEY = os.environ.get("HELIOS_SCRATCHPAD_KEY", "")
 TIMEOUT = 10
 
 
@@ -170,7 +167,7 @@ def format_data(data: object) -> str:
             text = str(data)
     if len(text) > MAX_DISPLAY_CHARS:
         dropped = len(text) - MAX_DISPLAY_CHARS
-        # ponytail: dump-then-slice. The json.dumps is O(n) either way; the
+        # Simplification: dump-then-slice. The json.dumps is O(n) either way; the
         # layout is what stalls. Stream-cap the encoder only if a payload ever
         # gets big enough that the dump itself is measurable.
         text = text[:MAX_DISPLAY_CHARS] + (

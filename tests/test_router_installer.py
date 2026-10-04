@@ -5,8 +5,6 @@ import stat
 import subprocess
 from pathlib import Path
 
-import pytest
-
 
 INSTALLER = (
     Path(__file__).resolve().parents[1]
@@ -74,8 +72,6 @@ def test_staged_release_is_traversable_but_not_writable_by_service_user(
     assert _mode(data) & 0o023 == 0
 
 
-# deploy/ is not part of the public source tree.
-@pytest.mark.skipif(not SERVICE_TEMPLATE.exists(), reason="deploy/helios-router.service.in is not part of this tree")
 def test_router_service_uses_credential_group_as_primary():
     template = SERVICE_TEMPLATE.read_text()
 

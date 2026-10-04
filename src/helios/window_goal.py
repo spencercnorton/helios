@@ -96,7 +96,7 @@ class GoalWorkMixin:
         work_id = self._current_work_id()
         work = None
         participants: list = []
-        # ponytail: cheap indexed reads on each execution-sync; cache only if
+        # Simplification: cheap indexed reads on each execution-sync; cache only if
         # it ever shows up in a profile.
         if coordinator is not None and work_id:
             try:

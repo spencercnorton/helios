@@ -55,7 +55,7 @@ def _save(path: Path, data: dict[str, Any]) -> None:
         os.chmod(tmp, 0o600)
         tmp.replace(path)
     except OSError as e:
-        # Disk full / read-only ~/.helios (e.g. the iCloud-overlay wedge) must
+        # Disk full / read-only ~/.helios (e.g. a wedged synced mount) must
         # never let a persistence failure escape into a GTK signal handler. The
         # atomic tmp+replace means a failure leaves any existing file intact.
         _log.warning("could not save %s: %s", path.name, e)
@@ -105,8 +105,8 @@ def store() -> UiStateStore:
 
 # Working directory for new chats, set in Settings → Defaults.
 #
-# $HOME is a discovery root, not an executable workspace: incident finding #6
-# (2026-08-03) was that HOME served as both, so project_perms clamps a HOME cwd
+# $HOME is a discovery root, not an executable workspace: an earlier review
+# (2026-08-03) found that HOME served as both, so project_perms clamps a HOME cwd
 # to read-only below the UI layer. Before this key existed the new-chat default
 # was hardcoded to $HOME, which meant a fresh chat could never edit — with
 # no way to change it short of picking a folder by hand every time.

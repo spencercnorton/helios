@@ -29,7 +29,7 @@ release_root="${install_root}/releases"
 credential_dir="/etc/helios-router"
 credential_path="${credential_dir}/openrouter.key"
 unit_path="/etc/systemd/system/helios-router.service"
-client_user="${HELIOS_ROUTER_CLIENT_USER:-${SUDO_USER:-spencer}}"
+client_user="${HELIOS_ROUTER_CLIENT_USER:-${SUDO_USER:-}}"
 
 release_id="$(git -C "${repo_root}" rev-parse --verify HEAD 2>/dev/null || true)"
 origin_main="$(
@@ -51,6 +51,10 @@ if [[ ! "${release_id}" =~ ^[0-9a-f]{40}$ \
     exit 1
 fi
 
+if [[ -z "${client_user}" ]]; then
+    echo "Set HELIOS_ROUTER_CLIENT_USER or run this installer through sudo." >&2
+    exit 1
+fi
 if ! id "${client_user}" >/dev/null 2>&1; then
     echo "Helios client user does not exist: ${client_user}" >&2
     exit 1

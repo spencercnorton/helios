@@ -1,6 +1,6 @@
 # Helios for autonomous agents — install, configure, verify
 
-This document is for an agent with shell access on a Linux machine that has to install and configure Helios for a person, unattended, and prove that it worked. Every step is a command followed by its expected result, and every path, key, default and message is taken from the source of this release (0.99.6), so a mismatch is a finding, not a typo. It cannot sign the person in to Claude or Codex: those are interactive logins in the CLIs' own credential stores, and the agent hands them back to the person at the points marked below.
+This document is for an agent with shell access on a Linux machine that has to install and configure Helios for a person, unattended, and prove that it worked. Every step is a command followed by its expected result, and every path, key, default and message is taken from the source of this release (0.99.7), so a mismatch is a finding, not a typo. It cannot sign the person in to Claude or Codex: those are interactive logins in the CLIs' own credential stores, and the agent hands them back to the person at the points marked below.
 
 ## Facts at a glance
 
@@ -63,7 +63,7 @@ Expected:
 
 ```
 Status: install ok installed
-Version: 0.99.6
+Version: 0.99.7
 ```
 
 `apt` pulls in `python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtksource-5 libgtksourceview-5-0` and, because Recommends are installed by default, `git`.
@@ -100,11 +100,11 @@ Expected: a version of `3.11` or newer.
 Step B3. Clone and read the version.
 
 ```bash
-git clone --branch v0.99.6 https://github.com/spencercnorton/helios.git ~/helios
+git clone --branch v0.99.7 https://github.com/spencercnorton/helios.git ~/helios
 PYTHONPATH=~/helios/src python3 -c "import helios; print(helios.__version__)"
 ```
 
-Expected: the clone prints `Note: switching to '<sha>'.` and a `You are in 'detached HEAD' state` paragraph (normal for a tag checkout), then `0.99.6`. Drop `--branch v0.99.6` to track the newest release instead; the version printed is then whatever `main` carries, and the `0.99.6` strings in this document, 7.3 and 12 are the release it was written for, not a mismatch.
+Expected: the clone prints `Note: switching to '<sha>'.` and a `You are in 'detached HEAD' state` paragraph (normal for a tag checkout), then `0.99.7`. Drop `--branch v0.99.7` to track the newest release instead; the version printed is then whatever `main` carries, and the `0.99.7` strings in this document, 7.3 and 12 are the release it was written for, not a mismatch.
 
 Step B4. Optional: app-grid entry and icon.
 
@@ -467,7 +467,7 @@ python3 -c "import helios; print(helios.__version__)"                   # APT (m
 PYTHONPATH=~/helios/src python3 -c "import helios; print(helios.__version__)"    # source checkout
 ```
 
-Expected: `helios	0.99.6` from `dpkg-query`, `0.99.6` from the other two. `man helios` is also installed by the package.
+Expected: `helios	0.99.7` from `dpkg-query`, `0.99.7` from the other two. `man helios` is also installed by the package.
 
 ## 8. Reference
 
@@ -537,13 +537,15 @@ When the Claude CLI supplies `permission_suggestions` with a tool request, the a
 | `HELIOS_LOG_LEVEL` | Python level name, case-insensitive, default `INFO`; an unknown name silently falls back to `INFO`; ignored when `HELIOS_DEBUG` is set |
 | `HELIOS_CODEX_TRANSPORT` | Only `exec` has an effect: every GPT session refuses to start. Leave unset |
 | `HELIOS_ROUTER_SOCKET` | Unix socket of an optional Smart Routing broker (default `/run/helios-router/router.sock`); inert unless the socket answers |
-| `HELIOS_SESSION_POOL` | Optional read-only cross-machine session pool; inert unless the path exists and `show_pool_sessions` is `true` |
+| `HELIOS_SESSION_POOL` | Optional read-only cross-machine session pool (default `$XDG_DATA_HOME/helios/session-pool`); inert unless the path exists and `show_pool_sessions` is `true` |
+| `HELIOS_SCRATCHPAD_URL`, `HELIOS_SCRATCHPAD_KEY` | Endpoint (default `http://127.0.0.1:9101`) and optional API key of the scratchpad service the Shared pane reads; inert unless a service answers |
 | `HELIOS_TANDEM_BINARY`, `TANDEM_STATE_DIR` | Optional Missions-pane integration with an external engine; inert unless used |
 | `CLAUDE_HOME` | Claude Code's home (default `~/.claude`); read once at import |
 | `XDG_DATA_HOME` | Parent of the `helios/` snapshot files (default `~/.local/share`) |
+| `XDG_CONFIG_HOME` | Parent of the optional `helios/system-prompt.d/` directory (default `~/.config`): every `*.md` file there, in name order, is appended to the instructions of every Claude, GPT and OpenRouter session; read once at startup |
 | `TERMINAL` | First choice of terminal emulator for the Settings sign-in button |
 | `ANTHROPIC_API_KEY`, `CODEX_API_KEY` | Force per-token billing detection (8.4) |
-| `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET`, `INFISICAL_API_URL`, `NORVI_TRACKER_API_TOKEN`, `NORVI_TRACKER_URL`, and the two shared-context pane variables named in `src/helios/backend/process/env_scrub.py` | Optional integrations, inert unless set. `NORVI_TRACKER_URL` is read once at import (`src/helios/backend/codex_context.py`); it is neither forwarded to children nor adopted from systemd. The first four are forwarded to some CLI children (9.4) and, when unset, adopted from `systemctl --user show-environment` at startup (logged as `adopted workload identity from the systemd user environment: <names>`) |
+| `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET`, `INFISICAL_API_URL`, `NORVI_TRACKER_API_TOKEN` | Optional integrations, inert unless set. They are forwarded to some CLI children (9.4) and, when unset, adopted from `systemctl --user show-environment` at startup (logged as `adopted workload identity from the systemd user environment: <names>`) |
 
 ## 9. Data and network inventory
 
@@ -605,7 +607,7 @@ Helios itself makes no Internet request at startup unless the sticky model is an
 
 Every CLI child (Claude session, title generation, archival, `claude auth status`, `claude mcp list`, Codex App Server, `codex login status`, OpenRouter Bash tool) gets a copy of Helios's environment with:
 
-1. `HELIOS_INTERNAL_ENV` removed: `HELIOS_DEBUG`, `HELIOS_LOG_LEVEL`, `HELIOS_CLAUDE_BINARY`, `HELIOS_CODEX_BINARY`, `HELIOS_CODEX_TRANSPORT`, `HELIOS_ROUTER_SOCKET`, `HELIOS_TANDEM_BINARY` and the two shared-context pane variables (full list in `src/helios/backend/process/env_scrub.py`). `GPG_AGENT_INFO` is dropped. `HELIOS_STATE_DIR` and `HELIOS_SESSION_POOL` pass through.
+1. `HELIOS_INTERNAL_ENV` removed: `HELIOS_DEBUG`, `HELIOS_LOG_LEVEL`, `HELIOS_CLAUDE_BINARY`, `HELIOS_CODEX_BINARY`, `HELIOS_CODEX_TRANSPORT`, `HELIOS_ROUTER_SOCKET`, `HELIOS_TANDEM_BINARY`, `HELIOS_SCRATCHPAD_URL` and `HELIOS_SCRATCHPAD_KEY` (full list in `src/helios/backend/process/env_scrub.py`). `GPG_AGENT_INFO` is dropped. `HELIOS_STATE_DIR` and `HELIOS_SESSION_POOL` pass through.
 2. Every variable whose upper-cased name contains `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`, `PASSPHRASE`, `_PASS`, `CREDENTIAL`, `APIKEY`, `_KEY`, `_PWD`, `_PAT`, `JWT`, `AUTH_CONFIG`, `ASKPASS` or `KEYRING` removed unless it is in that spawn's keep set. Benign names such as `TOKENIZERS_PARALLELISM` are dropped too; names without a marker (for example `DATABASE_URL`) survive.
 3. `SSH_AUTH_SOCK` always kept (`POLICY_KEEP`), so agents can `ssh` and push as the person.
 
@@ -702,7 +704,7 @@ python3 -c 'import json, pathlib, os; d = json.loads((pathlib.Path.home()/".heli
 git -C "$(python3 -c 'import json, pathlib; print(json.loads((pathlib.Path.home()/".helios"/"ui-state.json").read_text())["default_cwd"])')" rev-parse --show-toplevel >/dev/null && echo 9_GIT_REPO_OK
 ```
 
-Expected, in order: `1_BINARY_OK`, `helios	0.99.6` (or `helios 0.99.6`), `2_PYTHON_OK`, `3_LIBS_OK`, `4_GIT_OK`, `5_CLAUDE_FOUND <path> (via ...)` (printed on stderr; the path alone goes to stdout and into `C`, so lines 6 and 7 test the binary Helios will run, not whatever `claude` is on the agent's `PATH`), `6_CLAUDE_VERSION 2.1.217` or newer, `7_CLAUDE_LOGGED_IN`, `8_DEFAULT_CWD_OK <path> <mode> False` (`True` only if the person has already used Settings → "Save chat defaults"), `9_GIT_REPO_OK`. Line 7 is the one the agent cannot fix alone: hand `claude auth login --claudeai` (or `--console`) back to the person and re-run from line 7. Line 9 is advisory (Rewind only). Optional providers: `codex login status` printing `logged in` with exit 0 (5.2), and `stat -c '%a' ~/.helios/openrouter.key` printing `600` plus the `key-ok` check (5.3).
+Expected, in order: `1_BINARY_OK`, `helios	0.99.7` (or `helios 0.99.7`), `2_PYTHON_OK`, `3_LIBS_OK`, `4_GIT_OK`, `5_CLAUDE_FOUND <path> (via ...)` (printed on stderr; the path alone goes to stdout and into `C`, so lines 6 and 7 test the binary Helios will run, not whatever `claude` is on the agent's `PATH`), `6_CLAUDE_VERSION 2.1.217` or newer, `7_CLAUDE_LOGGED_IN`, `8_DEFAULT_CWD_OK <path> <mode> False` (`True` only if the person has already used Settings → "Save chat defaults"), `9_GIT_REPO_OK`. Line 7 is the one the agent cannot fix alone: hand `claude auth login --claudeai` (or `--console`) back to the person and re-run from line 7. Line 9 is advisory (Rewind only). Optional providers: `codex login status` printing `logged in` with exit 0 (5.2), and `stat -c '%a' ~/.helios/openrouter.key` printing `600` plus the `key-ok` check (5.3).
 
 ### 12.2 Desktop session only (7.1)
 

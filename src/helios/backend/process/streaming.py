@@ -237,7 +237,7 @@ def format_turn_footer(result: dict) -> str:
     if tokens is not None:
         parts += [f"{tokens[0]:,} in", f"{tokens[1]:,} out"]
     micro = terminal_cost_micro_usd(result)
-    # ponytail: a reported 0.0 is treated as "not priced" rather than shown as
+    # A reported 0.0 is treated as "not priced" rather than shown as
     # $0.0000 — no provider bills a real turn at zero, so it is always a gap.
     if micro:
         parts.append(

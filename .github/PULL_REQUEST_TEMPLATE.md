@@ -6,7 +6,7 @@
 
 ## How it was tested
 
-<!-- Paste the summary line of `python3 -m pytest -p no:cacheprovider` with `gi` hidden (e.g. `1816 passed, 91 skipped`), plus the Xvfb run if the change touches widgets, main_window.py or a driver. Say which distro and library versions: `dpkg -l libgtk-4-1 libadwaita-1-0 libgtksourceview-5-0 | awk '/^ii/{print $2, $3}'`, and the claude / codex CLI versions when a driver is involved. -->
+<!-- Paste the summary line of `python3 -m pytest -p no:cacheprovider` with `gi` hidden (e.g. `1821 passed, 87 skipped`), plus the Xvfb run if the change touches widgets, main_window.py or a driver. Say which distro and library versions: `dpkg -l libgtk-4-1 libadwaita-1-0 libgtksourceview-5-0 | awk '/^ii/{print $2, $3}'`, and the claude / codex CLI versions when a driver is involved. -->
 
 ## Checklist
 
@@ -18,8 +18,7 @@
 - [ ] Docs updated if behaviour changed: `README.md`, `docs/user-guide.md`, `docs/agent-setup.md` (§8.6 environment variables, §9 data and network inventory) and `debian/helios.1` for environment variables or files
 
 <!--
-How this lands: this repository is a release mirror. A maintainer reviews the
-pull request here, applies accepted changes to the development tree, and the
-change ships in the next tagged release — the pull request is then closed
-with a reference to that release. See CONTRIBUTING.md.
+How this lands: a maintainer reviews the pull request here; once CI passes
+it is squash-merged into `main` and ships in the next tagged release. See
+CONTRIBUTING.md.
 -->

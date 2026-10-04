@@ -1537,7 +1537,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         known: set[str] = set()
         try:
             known.update(entry.id for entry in model_catalog.anthropic_entries())
-        except Exception:  # ponytail: the scan is cached; a failure just shrinks the list
+        except Exception:  # the scan is cached; a failure just shrinks the list
             pass
         for model in getattr(driver, "_cli_models", None) or []:
             if isinstance(model, dict):
@@ -2230,8 +2230,8 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             else:
                 self._staged_permission_mode = mode
             # No toast: the toolbar's permission label IS the confirmation,
-            # and a banner per change queues over the composer (Spencer,
-            # 2026-08-22). Only failures and partial saves toast.
+            # and a banner per change queues over the composer
+            # (2026-08-22). Only failures and partial saves toast.
             self._sync_execution_control()
             return
 
@@ -7448,7 +7448,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             return
         try:
             from helios.backend.slash_commands import normalize_commands
-        except ImportError:  # ponytail: discovery slice not merged yet
+        except ImportError:  # optional module; no CLI command list without it
             return
         driver = getattr(self, "_driver", None)
         cli = []

@@ -5,20 +5,13 @@ the process is deliberately light — but a few things are fixed.
 
 ## How changes land
 
-This GitHub repository is a **release mirror**: every commit on `main` after
-the initial import is a tagged release built from a private development
-tree, and `main` only ever
-moves forward by a release. That has two consequences for contributors:
+Development happens in this repository. Pull requests target `main`; once
+CI passes and a maintainer has reviewed it, an accepted pull request is
+squash-merged, so it lands as one commit credited to you. A release is a
+`vX.Y.Z` tag on `main`: the Release workflow builds the `.deb` and publishes
+it with the tagged source, and [CHANGELOG.md](CHANGELOG.md) says what changed.
 
-- Pull requests are reviewed **here**, but they are not merged here. An
-  accepted change is applied to the development tree and ships in the next
-  tagged release; the pull request is then closed with a comment that names
-  that release, and the release notes credit you. Every commit on `main` is
-  a bot release commit — the public history is audited to contain nothing
-  else — so your name will not appear in `git log` or the Contributors
-  graph. The closed pull request, linked from that comment, is the durable
-  record of your contribution.
-- Please do not rebase your pull request onto anything but `main`.
+- Keep a pull request to one change, and rebase it onto `main` only.
 
 ## Before you start
 
@@ -66,7 +59,7 @@ run it with a throwaway home: `HOME=$(mktemp -d) ./scripts/helios`.
 
 ### Backend tests
 
-This is what CI (`.github/workflows/ci.yml`) runs: ubuntu-latest, Python
+This is what CI (`.github/workflows/ci.yml`) runs: ubuntu-24.04, Python
 3.13, and a `gi` stub on `PYTHONPATH` that raises `ModuleNotFoundError`, so
 every GTK test skips. Reproduce it (CI also passes `-q`, which this block
 drops so the summary line prints — see below):
@@ -77,10 +70,10 @@ printf 'raise ModuleNotFoundError("gtk hidden")\n' > "$HOME/nogtk/gi.py"
 PYTHONPATH="$HOME/nogtk" python3 -m pytest -p no:cacheprovider
 ```
 
-The last line is the summary, for example `1816 passed, 91 skipped in 18.9s`
+The last line is the summary, for example `1821 passed, 87 skipped`, then the run time
 (one fewer pass and one more skip on Python 3.11 or 3.12). Roughly 90 skips
 are expected; adding `-rs` to the command lists the reasons, and every one
-should read `gtk hidden` or `not part of this tree` (on Python 3.11 or 3.12
+should read `gtk hidden` (on Python 3.11 or 3.12
 one more reads `pathlib.full_match is 3.13+`). Do not add `-q`:
 `pyproject.toml` already sets it, and a second `-q` suppresses the summary
 line. Paste that line in the pull request.
@@ -140,9 +133,9 @@ and no display-unavailable skips.
   reformats a file is two pull requests.
 - Tests: a bug fix carries a regression test; a feature carries the smallest
   test that fails without it.
-- Do not bump the version. `src/helios/__init__.py` and `pyproject.toml`
-  must stay equal (a test enforces it); the maintainer bumps both at
-  release. There is no changelog to edit in this tree.
+- Do not bump the version or edit `CHANGELOG.md`. `src/helios/__init__.py`
+  and `pyproject.toml` must stay equal (a test enforces it); the maintainer
+  bumps both and writes the changelog entry at release.
 
 ## Pull request checklist
 

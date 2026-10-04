@@ -128,7 +128,7 @@ def test_every_transparent_background_added_here_is_opt_in() -> None:
 def test_the_alpha_sits_on_exactly_one_node() -> None:
     """The seam bug this shipped with, in test form.
 
-    Measured on the development workstation: with the alpha on BOTH the container and the inner list,
+    Measured on a development machine: with the alpha on BOTH the container and the inner list,
     the rows band composited to 92.6% opaque against 72.3% for the empty area
     below it — a visible horizontal seam, because two 0.72 layers stack to
     1-(1-0.72)^2. Uniform 72.3% once only the container paints.
@@ -327,7 +327,7 @@ def test_the_child_clear_cannot_reach_a_tooltip() -> None:
     A tooltip is its own surface, but its CSS node hangs off the window's, and
     libadwaita paints the tooltip's plate on that node (`tooltip.background`).
     So a bare `window.helios-glass > *` cleared it and nothing underneath
-    repainted it: measured on the development workstation (GNOME 50 Wayland, GTK 4.22.4), the
+    repainted it: measured on a development machine (GNOME 50 Wayland, GTK 4.22.4), the
     interior read the window's own srgb(32,32,32) instead of srgb(6,6,11) and
     the row's title + cwd hung over the sidebar as bare white text.
     """
