@@ -14,3 +14,9 @@ source (`source.tar.gz`) and `SHA256SUMS.txt`.
 - `scripts/build-deb.sh` is now `scripts/build.sh`: it builds the `.deb` only and runs `lintian` when installed. Releases are built and published by the repository's Release workflow.
 - Development happens in this repository: pull requests are reviewed and squash-merged here.
 - CI runs on `ubuntu-24.04`, and the README footer links the whole suite.
+- `system-prompt.d` is capped at 64 KiB in total; a file that would pass the cap is skipped with a warning.
+- `scripts/install-helios-router-service` takes the client user from `HELIOS_ROUTER_CLIENT_USER` or `SUDO_USER` and no longer has a built-in default.
+
+### Fixed
+
+- The router service installer works from a source checkout: `deploy/helios-router.service.in` is now part of the tree.
