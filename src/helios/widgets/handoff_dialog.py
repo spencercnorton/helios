@@ -79,7 +79,7 @@ def present_handoff_dialog(
     dialog = Adw.AlertDialog.new(
         "Hand Off Session",
         "Write this session to the shared scratchpad so any Helios session "
-        "on the tailnet can pick it up.",
+        "on your network can pick it up.",
     )
     dialog.add_response(_RESPONSE_CANCEL, "Cancel")
     dialog.add_response(_RESPONSE_WRITE, "Write to Scratchpad")

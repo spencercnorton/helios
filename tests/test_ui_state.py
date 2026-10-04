@@ -55,8 +55,8 @@ def test_corrupt_file_resets_gracefully(tmp_path):
 
 
 def test_save_oserror_does_not_propagate(tmp_path, monkeypatch):
-    """A failing write (disk full / read-only ~/.helios, e.g. the iCloud-overlay
-    wedge) must not let an OSError escape set() into a GTK signal handler."""
+    """A failing write (disk full / read-only ~/.helios, e.g. a wedged synced
+    mount) must not let an OSError escape set() into a GTK signal handler."""
     p = tmp_path / "ui.json"
     s = UiStateStore(p)
 

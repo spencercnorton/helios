@@ -4,7 +4,7 @@ Claude Code stores one directory per working-directory it has been invoked from.
 The directory name is the absolute cwd with '/' replaced by '-'.
 
     /home/alice             -> -home-alice
-    /srv/icloud/kleos       -> -srv-icloud-kleos
+    /srv/work/app           -> -srv-work-app
 
 Inside each project dir lives one JSONL file per session (<uuid>.jsonl) plus
 sometimes a directory with the same uuid for auxiliary state, and a `memory/`
@@ -50,16 +50,16 @@ _SIDECAR_DISPLAY_GRACE_S = 15
 # (sweep_orphan_sidecar_sessions) so a session mid-first-turn isn't lost.
 _SIDECAR_SWEEP_GRACE_S = 10 * 60
 
-# Shared cross-machine session pool on iCloud. Each host pushes its own
-# ~/.claude/projects/ into a subdir named after the host (workstation/, laptop/...).
-# We surface OTHER hosts' subdirs as read-only "remote" projects so Helios can
-# browse the MacBook's sessions (and vice-versa). See
-# /srv/icloud/claude-kleos-mac/claude-session-pool/README.md.
+# Optional cross-machine session pool: a synced directory where each host
+# pushes its own ~/.claude/projects/ into a subdir named after the host
+# (workstation/, laptop/...). We surface OTHER hosts' subdirs as read-only
+# "remote" projects so one machine can browse another's sessions. Set
+# HELIOS_SESSION_POOL to the pool root; the default is inert until it exists.
 POOL_ROOT = Path(
-    os.environ.get(
-        "HELIOS_SESSION_POOL",
-        "/srv/icloud/claude-kleos-mac/claude-session-pool",
-    )
+    os.environ.get("HELIOS_SESSION_POOL")
+    or Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    / "helios"
+    / "session-pool"
 )
 
 
@@ -500,7 +500,7 @@ def archive_stale_throwaways(*, now: float | None = None) -> int:
 
 
 def discover_pool_projects() -> list[Project]:
-    """Read-only projects from OTHER hosts in the shared iCloud pool.
+    """Read-only projects from OTHER hosts in the shared session pool.
 
     Returns [] when the pool is absent (mount down / not set up), so callers
     can always include it safely. Our own host subdir is skipped — it's just a
@@ -532,7 +532,7 @@ def discover_projects(*, include_pool: bool = False) -> list[Project]:
     """Scan ~/.claude/projects/ for local projects, newest first.
 
     When `include_pool` is set, append read-only projects from other hosts in
-    the shared iCloud pool (local projects stay on top)."""
+    the shared session pool (local projects stay on top)."""
     locals_: list[Project] = []
     if PROJECTS_DIR.exists():
         for entry in PROJECTS_DIR.iterdir():
@@ -551,7 +551,7 @@ def discover_local_sessions() -> list[Session]:
     This is the unified-list view: the project dir stops being a navigation
     level and becomes per-session metadata (`session.project.cwd`). Fast —
     local disk only; pool sessions come from `discover_pool_sessions()` so
-    callers can keep the slow CIFS scan off the main thread.
+    callers can keep the slow network-mount scan off the main thread.
 
     Returns EVERY local session — the sidebar hides sidecar-only "ghost" rows
     via `drop_empty_sessions()` (which needs live-driver ids the display layer
@@ -601,9 +601,9 @@ def drop_empty_sessions(
 
 
 def discover_pool_sessions() -> list[Session]:
-    """Every other-host session in the shared iCloud pool, newest-first.
+    """Every other-host session in the shared session pool, newest-first.
 
-    SLOW — each stat and descendant proof goes over the soft CIFS mount. Call
+    SLOW — each stat and descendant proof may go over a network mount. Call
     off-thread. Descendant-only transcripts are removed here, before the pool
     result reaches ``SessionList._apply_pool_sessions`` on GTK; uncertain,
     unreadable, and mixed root/descendant files remain visible."""

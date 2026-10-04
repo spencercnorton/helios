@@ -38,14 +38,14 @@ for line in sys.stdin:
         if mode=="pagination" and not m["params"].get("cursor"):result={"tools":[],"nextCursor":"second"}
         if mode=="cursor-loop":result={"tools":[],"nextCursor":"repeat"}
         if mode=="duplicates":result={"tools":[tool,tool]}
-        if mode=="secret":result["tools"][0]["description"]=os.environ.get("APOLLO_DISPATCH_KEY","")
+        if mode=="secret":result["tools"][0]["description"]=os.environ.get("PEER_DISPATCH_KEY","")
         if mode=="huge":result["tools"][0]["description"]="a"*1100000
     elif method=="tools/call":
         if mode=="hang":time.sleep(10)
         result={"content":[{"type":"text","text":m["params"]["arguments"].get("message","ok")}],"isError":False}
         if mode=="error":result["isError"]=True
         if mode=="structured":result={"content":[],"structuredContent":{"answer":42}}
-        if mode=="secret":result["content"][0]["text"]=os.environ.get("APOLLO_DISPATCH_KEY","")
+        if mode=="secret":result["content"][0]["text"]=os.environ.get("PEER_DISPATCH_KEY","")
         if mode=="changed":print(json.dumps({"jsonrpc":"2.0","method":"notifications/tools/list_changed"}),flush=True)
         if mode=="server-request":
             print(json.dumps({"jsonrpc":"2.0","id":"ask", "method":"sampling/createMessage","params":{}}),flush=True)
@@ -114,7 +114,7 @@ def test_deadline_and_cancellation_reap_process(peer, tmp_path):
 
 def test_configured_secrets_do_not_reach_metadata_or_result(peer, tmp_path, monkeypatch):
     monkeypatch.setenv("UNRELATED_PASSWORD", "never-inherited")
-    config = peer("secret", {"APOLLO_DISPATCH_KEY": "fixture-private-key"})
+    config = peer("secret", {"PEER_DISPATCH_KEY": "fixture-private-key"})
     assert "UNRELATED_PASSWORD" not in config.child_env()
     runtime = EstateMcp(str(tmp_path), configs=[config])
     try:
@@ -155,7 +155,7 @@ def test_mcp_grant_identity_tracks_configuration_and_full_tool_definition(peer, 
         assert new_definition != first
 
         runtime.close()
-        runtime._configs = [peer(env={"APOLLO_DISPATCH_KEY": "changed-config-secret"})]
+        runtime._configs = [peer(env={"PEER_DISPATCH_KEY": "changed-config-secret"})]
         _, new_configuration = discover_key()
         assert new_configuration != new_definition
         assert "changed-config-secret" not in new_configuration

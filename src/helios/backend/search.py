@@ -5,8 +5,8 @@ human-readable text of user/assistant messages (and thinking blocks). One hit
 per session — the first matching snippet — newest session first. Dependency-
 free and cancellable; meant to run on a worker thread behind a search UI.
 
-We scan local projects only: the remote pool lives on a slow CIFS/iCloud mount
-where a full grep would stall for many seconds.
+We scan local projects only: the remote pool usually lives on a slow network
+mount where a full grep would stall for many seconds.
 """
 
 from __future__ import annotations

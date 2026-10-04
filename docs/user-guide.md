@@ -314,18 +314,21 @@ files each key lives in, is in [agent-setup.md](agent-setup.md).
 | `HELIOS_LOG_LEVEL` | Python logging level name (`DEBUG` … `CRITICAL`); default `INFO`; an unknown name is treated as `INFO`. `WARNING` quiets startup |
 | `HELIOS_CODEX_TRANSPORT` | Leave unset; `exec` refuses every GPT chat |
 | `HELIOS_ROUTER_SOCKET` | Unix socket of an optional Smart Routing broker (default `/run/helios-router/router.sock`); inert unless the socket answers |
-| `HELIOS_SESSION_POOL` | Root of an optional read-only session pool shared between machines; ignored when the path does not exist |
+| `HELIOS_SESSION_POOL` | Root of an optional read-only session pool shared between machines (default `~/.local/share/helios/session-pool`); ignored when the path does not exist |
+| `HELIOS_SCRATCHPAD_URL`, `HELIOS_SCRATCHPAD_KEY` | Endpoint (default `http://127.0.0.1:9101`) and optional API key of the scratchpad service the Shared pane reads |
 | `HELIOS_TANDEM_BINARY` | Path of the optional `tandem` binary for the Missions pane |
 | `CLAUDE_HOME` | Where Claude Code transcripts are read (default `~/.claude`) |
 | `XDG_DATA_HOME` | Tool inventories cached under `<dir>/helios/` (default `~/.local/share`) |
+| `XDG_CONFIG_HOME` | Optional extra instructions: every `*.md` file in `<dir>/helios/system-prompt.d/` (default `~/.config`), in name order, is added to every session's instructions; read at startup |
 | `TANDEM_STATE_DIR` | Tandem mission state for the Missions pane (default `~/.tandem`) |
 | `TERMINAL` | Terminal emulator for the Settings *Sign in…* button (else the first of `x-terminal-emulator`, `gnome-terminal`, `kgx`, `konsole`, `tilix`, `kitty`, `alacritty`, `foot`, `xterm`) |
 
 A desktop launch does not read `~/.bashrc`; set these on the desktop entry's
 `Exec=` line (`Exec=env HELIOS_CLAUDE_BINARY=/path/to/claude helios`).
 `HELIOS_DEBUG`, `HELIOS_LOG_LEVEL`, `HELIOS_CLAUDE_BINARY`,
-`HELIOS_CODEX_BINARY`, `HELIOS_CODEX_TRANSPORT`, `HELIOS_ROUTER_SOCKET` and
-`HELIOS_TANDEM_BINARY` are stripped from the agents' own environment;
+`HELIOS_CODEX_BINARY`, `HELIOS_CODEX_TRANSPORT`, `HELIOS_ROUTER_SOCKET`,
+`HELIOS_TANDEM_BINARY` and the two `HELIOS_SCRATCHPAD_*` variables are
+stripped from the agents' own environment;
 `HELIOS_STATE_DIR` and `HELIOS_SESSION_POOL` pass through.
 
 **Credentials are not configured through Helios variables.** `claude` sign-in

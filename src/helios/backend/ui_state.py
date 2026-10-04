@@ -55,7 +55,7 @@ def _save(path: Path, data: dict[str, Any]) -> None:
         os.chmod(tmp, 0o600)
         tmp.replace(path)
     except OSError as e:
-        # Disk full / read-only ~/.helios (e.g. the iCloud-overlay wedge) must
+        # Disk full / read-only ~/.helios (e.g. a wedged synced mount) must
         # never let a persistence failure escape into a GTK signal handler. The
         # atomic tmp+replace means a failure leaves any existing file intact.
         _log.warning("could not save %s: %s", path.name, e)

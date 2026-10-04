@@ -182,7 +182,7 @@ def test_spawn_scrubs_env_and_handshake_order():
             "OPENAI_API_KEY": "fixture-key",
             "CODEX_API_KEY": "fixture-exec-key",
             "CODEX_ACCESS_TOKEN": "-".join(("fixture", "access", "token")),
-            "APOLLO_SCRATCHPAD_KEY": "must-not-leak",
+            "HELIOS_SCRATCHPAD_KEY": "must-not-leak",
             "HELIOS_DEBUG": "1",
         },
         popen_factory=factory,
@@ -202,7 +202,7 @@ def test_spawn_scrubs_env_and_handshake_order():
     assert "OPENAI_API_KEY" not in factory.kwargs["env"]
     assert "CODEX_API_KEY" not in factory.kwargs["env"]
     assert "CODEX_ACCESS_TOKEN" not in factory.kwargs["env"]
-    assert "APOLLO_SCRATCHPAD_KEY" not in factory.kwargs["env"]
+    assert "HELIOS_SCRATCHPAD_KEY" not in factory.kwargs["env"]
     assert "HELIOS_DEBUG" not in factory.kwargs["env"]
     assert [m["method"] for m in process.stdin.messages] == [
         "initialize",
