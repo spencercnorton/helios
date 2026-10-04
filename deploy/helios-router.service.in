@@ -1,0 +1,51 @@
+[Unit]
+Description=Helios OpenRouter credential broker
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=helios-router
+Group=helios-router
+SupplementaryGroups=@SOCKET_GROUP@
+ExecStartPre=/usr/bin/test -r /etc/helios-router/openrouter.key
+ExecStart=/opt/helios-router/current/venv/bin/python -I -m helios.router_service --credential /etc/helios-router/openrouter.key --state-dir /var/lib/helios-router --socket /run/helios-router/router.sock --socket-group @SOCKET_GROUP@
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=70s
+KillMode=mixed
+UMask=0027
+TasksMax=32
+MemoryMax=512M
+LimitNOFILE=128
+
+RuntimeDirectory=helios-router
+RuntimeDirectoryMode=0750
+StateDirectory=helios-router
+StateDirectoryMode=0750
+
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadOnlyPaths=/etc/helios-router/openrouter.key
+
+[Install]
+WantedBy=multi-user.target
