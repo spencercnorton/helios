@@ -378,7 +378,7 @@ class TranscriptView(Gtk.Box):
             if not bubble.attach_tool_result(tr, source.timestamp):
                 leftovers.append((tr, source))
         for tr, source in leftovers:
-            # ponytail: one standalone row per orphan, in arrival order; the
+            # One standalone row per orphan, in arrival order; the
             # id belonged to the live message but no card claimed it.
             self._append_content(
                 MessageBubble(
@@ -507,7 +507,7 @@ class TranscriptView(Gtk.Box):
         """
         if self._destroyed:
             return
-        # ponytail: severity is threaded through for callers but not yet
+        # Known limit: severity is threaded through for callers but not yet
         # used here — both warning and error notices render identically as
         # role="hook". Split into per-severity roles/CSS if that distinction
         # earns its keep.

@@ -26,6 +26,6 @@ jobs:
         run: |
           mkdir -p "$HOME/nogtk"
           # pytest >= 8.2 importorskip-skips only on ModuleNotFoundError; a plain
-          # ImportError is a collection error (same shim as .public-release.toml).
+          # ImportError is a collection error.
           printf 'raise ModuleNotFoundError("gtk hidden in CI")\n' > "$HOME/nogtk/gi.py"
           PYTHONPATH="$HOME/nogtk" python3 -m pytest -q -p no:cacheprovider

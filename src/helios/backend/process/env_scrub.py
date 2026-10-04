@@ -54,13 +54,13 @@ Removal layers (all NAME-based — a value is never read, logged, or stored):
 
    * The interactive Claude session additionally gets
      :data:`INFISICAL_ENV` — the machine identity it uses to fetch
-     every other secret at runtime (Spencer, 2026-08-05). Housekeeping
+     every other secret at runtime (2026-08-05). Housekeeping
      Claude spawns (title generation, archival, auth/mcp/version probes) share
      ``CLAUDE_AUTH_ENV`` but deliberately do NOT get this.
 
 4. **Agent-forwarding sockets** — ``SSH_AUTH_SOCK`` is deliberately RETAINED
-   (:data:`POLICY_KEEP`) so agents can ssh and push autonomously (Spencer,
-   2026-07-15) — a considered trust grant. ``GPG_AGENT_INFO`` is dropped as
+   (:data:`POLICY_KEEP`) so agents can ssh and push autonomously
+   (2026-07-15) — a considered trust grant. ``GPG_AGENT_INFO`` is dropped as
    minor hygiene, NOT as a GPG boundary: modern GnuPG locates its agent socket
    via gpgconf regardless of this var, so dropping it does not isolate GPG.
 
@@ -99,7 +99,7 @@ HELIOS_INTERNAL_ENV = (
 AGENT_SOCKET_ENV = ("GPG_AGENT_INFO",)
 
 # Always RETAINED, overriding the credential markers — an explicit, greppable
-# trust grant (agents may ssh and push autonomously; Spencer, 2026-07-15).
+# trust grant (agents may ssh and push autonomously; 2026-07-15).
 POLICY_KEEP = frozenset({"SSH_AUTH_SOCK"})
 
 # Purpose-scoped auth allow-lists (see module doc). A child gets ONLY the auth
@@ -126,13 +126,13 @@ CLAUDE_AUTH_ENV = frozenset(
 # absent.
 CODEX_EXEC_ENV = frozenset({"CODEX_API_KEY"})
 
-# Operator-granted workload credential (Spencer, 2026-08-05). The
+# Operator-granted workload credential (2026-08-05). The
 # Infisical machine identity the INTERACTIVE agent uses to fetch every other
 # secret at runtime. Same class of considered, greppable trust grant as
 # SSH_AUTH_SOCK in POLICY_KEEP.
 #
 # Deliberately ONE bootstrap credential, not a pile of service tokens: with
-# this, the agent pulls GitLab / tracker / Portainer secrets from Infisical on
+# this, the agent pulls other service secrets from Infisical on
 # demand, so GITLAB_TOKEN, JIRA_API_KEY, HELIOS_SCRATCHPAD_KEY and friends stay
 # scrubbed by name. Widening this set is a policy decision, not a convenience —
 # add a secret here only when nothing can derive it from Infisical.
@@ -155,7 +155,7 @@ INFISICAL_WORKLOAD_ENV = frozenset(
 # Which Infisical to talk to. NOT a credential — separate from the pair above so
 # that stays "the secret", but load-bearing all the same: the CLI's default is
 # Infisical **Cloud**, so a session without this silently authenticates against
-# app.infisical.com instead of the self-hosted server and gets an unrelated
+# app.infisical.com instead of the operator's own server and gets an unrelated
 # failure. `--domain` on `infisical login` does not carry over to later
 # commands, which is exactly how this was found.
 #
@@ -258,7 +258,7 @@ def import_workload_identity(
 ) -> tuple[str, ...]:
     """Adopt the workload credentials from the systemd user environment.
 
-    Covers the Infisical machine identity and the Norvi Tracker token — see
+    Covers the Infisical machine identity and the work-tracker token — see
     :data:`ADOPTED_ENV`.
 
     The Claude driver forwards :data:`INFISICAL_ENV` so an interactive

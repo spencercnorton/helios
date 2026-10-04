@@ -1,6 +1,6 @@
 """Read-only data layer for the Missions pane — the `~/.tandem/` on-disk contract.
 
-`tandem` (the estate's tandem repository) is the headless dual-engine mission orchestrator. Its
+`tandem` (installed separately) is the headless dual-engine mission orchestrator. Its
 state lives entirely on disk under ``~/.tandem/`` (overridable via
 ``$TANDEM_STATE_DIR``, read at *call* time — G12) and is written by external
 processes: a `tandem mission run` in a terminal, cron, or another session.

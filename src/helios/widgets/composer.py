@@ -347,7 +347,7 @@ class Composer(Gtk.Box):
     def add_attachments(self, paths: list[str]) -> None:
         """Insert `@<abspath>` references for the given files into the input so
         the backend can pick them up. Claude expands @-paths; for GPT they ride
-        as plain text. ponytail: text @-refs only (no real image content-blocks);
+        as plain text. Known limit: text @-refs only (no real image content-blocks);
         the path stays visible/editable, upgrade if it proves insufficient."""
         if self._read_only:
             return

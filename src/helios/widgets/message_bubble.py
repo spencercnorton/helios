@@ -254,7 +254,7 @@ class MessageBubble(Gtk.Box):
             self._activity_expander.set_label(self._activity_label())
             # Rebuilds only if the group is open; a collapsed one picks the new
             # result up from _resting_activity_items on its next expand.
-            # ponytail: an OPEN group rebuilds every card per arriving result —
+            # Known limit: an OPEN group rebuilds every card per arriving result —
             # O(n²) on a turn whose group the user left expanded, bounded by the
             # existing 20-per-idle batching. Swap in the one card by index if a
             # long tool run is ever measured to stutter.
@@ -551,7 +551,7 @@ class StreamingBubble(Gtk.Box):
             seg.label = self._stream_text_label()
             seg.widget.append(seg.label)
             self._insert_at(i, seg.widget)
-        # ponytail: a block whose closing blank line has not arrived yet stays
+        # Known limit: a block whose closing blank line has not arrived yet stays
         # raw in the tail label — a long final paragraph renders plain until
         # message_stop. Conservative on purpose: splitting mid-block would
         # render differently from the resting bubble. Upgrade path is a real
@@ -911,7 +911,7 @@ def _files_changed_label(tool_uses: list[ToolUse]) -> Gtk.Widget | None:
 def _elapsed_text(started: str, finished: str) -> str:
     """How long a call took, from the two record timestamps that bracket it.
 
-    ponytail: measured from the assistant MESSAGE, not per-call start — the
+    Known limit: measured from the assistant MESSAGE, not per-call start — the
     transcript carries no per-call start, so on a multi-call message every
     card's clock begins together. Blank whenever either stamp is missing or
     unparseable, which is what makes it safe to show unconditionally.

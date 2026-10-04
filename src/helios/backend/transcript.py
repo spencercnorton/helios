@@ -61,7 +61,7 @@ def activity_items(turn: "Turn") -> list[tuple[str, object, str]]:
     order and are appended after the paired items with an empty name.
     GTK-free so the pairing is testable on the slim CI image.
 
-    ponytail: the first invocation claims every result sharing its id.
+    Known limit: the first invocation claims every result sharing its id.
     ``session_insights._ambiguous_tool_ids`` shows ids do get reused; per-call
     disambiguation only if a real transcript shows it mattering.
     """
@@ -570,7 +570,7 @@ def read_transcript_since(
             # replaced in between, so `restarted` described the old file while
             # the read targeted the new one.
             #
-            # ponytail: this NARROWS the race, it does not close it. The inode
+            # Known limit: this NARROWS the race, it does not close it. The inode
             # can still be truncated after this fstat, or the path atomically
             # replaced after the open, in which case we read the old unlinked
             # inode and return an offset that no longer means anything. Closing
@@ -580,7 +580,7 @@ def read_transcript_since(
             # OSError here and correctly holds the offset). Add the ino check if
             # one ever appears — do not paper over it with a size heuristic.
             size = os.fstat(f.fileno()).st_size
-            # ponytail: a shrink is the rotation signal. A rewriter that
+            # Known limit: a shrink is the rotation signal. A rewriter that
             # replaces a file in place AND grows it would fool this; add an
             # st_ino check if one appears.
             restarted = offset > size

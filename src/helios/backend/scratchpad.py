@@ -167,7 +167,7 @@ def format_data(data: object) -> str:
             text = str(data)
     if len(text) > MAX_DISPLAY_CHARS:
         dropped = len(text) - MAX_DISPLAY_CHARS
-        # ponytail: dump-then-slice. The json.dumps is O(n) either way; the
+        # Simplification: dump-then-slice. The json.dumps is O(n) either way; the
         # layout is what stalls. Stream-cap the encoder only if a payload ever
         # gets big enough that the dump itself is measurable.
         text = text[:MAX_DISPLAY_CHARS] + (

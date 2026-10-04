@@ -1,7 +1,7 @@
 """Per-project user-visible name overrides.
 
 The display name in the project sidebar defaults to the last two segments of
-the project's cwd ("home/spencer", "spencer/helios", ...). Users can override
+the project's cwd ("home/alice", "alice/helios", ...). Users can override
 this with a custom label that survives restarts and travels by cwd.
 
 Storage: a single JSON file at ~/.helios/project-names.json mapping cwd → label.

@@ -265,7 +265,7 @@ class CodexAppServer:
         # inherit this scrubbed env and therefore get no OPENAI_API_KEY /
         # CODEX_API_KEY either. Direct env-only CODEX_ACCESS_TOKEN compatibility
         # is deliberately out of H1. The tracker token is the one exception,
-        # and it is not provider auth: it is the estate work record a session
+        # and it is not provider auth: it is the work record a session
         # reads for context and records its checkpoints against.
         child_env = scrubbed_child_env(self._source_env, keep=NORVI_TRACKER_ENV)
         child_env.setdefault("RUST_LOG", "error")

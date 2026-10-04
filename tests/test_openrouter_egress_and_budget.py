@@ -7,19 +7,17 @@ Three findings from the 2026-09-03 inspection, all measured:
   and one 70%-full round on a 1M-context frontier model is $21-22, so a
   post-round check can only close the gate after the expensive event;
 * tool results are POSTed to a third-party endpoint on every later round and
-  persisted verbatim, and the estate's scrubber — which already runs over the
-  durable Work ledger — did not run on that path. `NORVI_TRACKER_API_TOKEN`
-  (admin-scoped) is in the Bash tool's child environment by design, so one
-  approved `env` uploaded it;
+  persisted verbatim, and Helios's scrubber — which already runs over the
+  durable Work ledger — did not run on that path. A forwarded integration
+  token is in the Bash tool's child environment by design, so one approved
+  `env` uploaded it;
 * the dialog offered Allow once / Deny only, so a session doing real work
   prompted on every edit, which pushes a user to `acceptEdits` wholesale
   rather than granting narrowly.
 
 Note on the fixtures below: credential-shaped strings are assembled at runtime
-rather than written as literals. The development workstation runs a PreToolUse guard that denies any
-tool call carrying one, and it cannot tell a test fixture from the real thing —
-which is the correct trade, so the fixtures work around it rather than the
-other way round.
+rather than written as literals, so a secret scanner or a credential guard
+that denies any tool call carrying one does not trip on a test fixture.
 """
 
 from __future__ import annotations
@@ -528,8 +526,8 @@ class TestTheScrubDoesNotDamageOrdinaryOutput:
         assert "s3cr3tvalue" not in out
 
     def test_a_private_key_block_is_still_removed(self):
-        # Assembled at runtime; a literal PEM header trips the estate's
-        # PreToolUse credential guard even inside a test fixture.
+        # Assembled at runtime; a literal PEM header trips secret scanners
+        # and credential guards even inside a test fixture.
         head = "-----BEGIN " + "OPENSSH PRIVATE KEY" + "-----"
         tail = "-----END " + "OPENSSH PRIVATE KEY" + "-----"
         block = f"{head}\nb3BlbnNzaC1rZXktdjEAAAAA\n{tail}"
@@ -799,31 +797,31 @@ def _round_with_prompt_tokens(prompt_tokens: int):
 
 class TestTheScrubCatchesTheMotivatingLeak:
     """A review finding: shape rules alone cannot catch the concrete
-    leak this scrub was written for. `NORVI_TRACKER_API_TOKEN` is 70 random
-    characters with no vendor prefix, so `env`/`printenv` output sailed through
+    leak this scrub was written for. A forwarded integration token with no
+    vendor prefix or recognisable shape in `env`/`printenv` output sails through
     `scrub_sensitive(named_pairs=False)`. Two new passes close it — the exact
     values Helios itself forwarded or holds, and complete env-assignment lines
     with a credential-shaped UPPER_CASE name — measured at 0 false positives
     over 319 repository files in raw, `Read` (line-numbered) and `Grep`
     (path:line:) shapes."""
 
-    SEVENTY = "q9" + "a1b2c3d4" * 8 + "z8y7"  # prefixless, like the tracker token
+    PREFIXLESS = "q9" + "a1b2c3d4" * 7 + "z8y7"  # prefixless, no recognisable shape
 
     def test_an_env_dump_line_is_redacted_by_name(self):
-        out = od._scrub_tool_output(f"HOME=/home/x\nNORVI_TRACKER_API_TOKEN={self.SEVENTY}\nSHELL=/bin/bash")
-        assert self.SEVENTY not in out
+        out = od._scrub_tool_output(f"HOME=/home/x\nNORVI_TRACKER_API_TOKEN={self.PREFIXLESS}\nSHELL=/bin/bash")
+        assert self.PREFIXLESS not in out
         assert "HOME=/home/x" in out and "SHELL=/bin/bash" in out
 
     def test_read_output_with_line_numbers_is_still_caught(self):
         """The Read tool numbers every line; a `^`-anchored rule missed exactly
         the tool output that would carry a .env file upstream."""
-        out = od._scrub_tool_output(f"1: # settings\n2: DB_PASSWORD={self.SEVENTY[:24]}\n3: DEBUG=1")
-        assert self.SEVENTY[:24] not in out
+        out = od._scrub_tool_output(f"1: # settings\n2: DB_PASSWORD={self.PREFIXLESS[:24]}\n3: DEBUG=1")
+        assert self.PREFIXLESS[:24] not in out
         assert "3: DEBUG=1" in out
 
     def test_grep_output_with_a_path_prefix_is_still_caught(self):
-        out = od._scrub_tool_output(f"/srv/app/.env:7:export API_SECRET={self.SEVENTY[:30]}")
-        assert self.SEVENTY[:30] not in out
+        out = od._scrub_tool_output(f"/srv/app/.env:7:export API_SECRET={self.PREFIXLESS[:30]}")
+        assert self.PREFIXLESS[:30] not in out
         assert "/srv/app/.env:7:export API_SECRET=" in out
 
     def test_a_shell_expansion_is_not_a_secret(self):
@@ -848,10 +846,10 @@ class TestTheScrubCatchesTheMotivatingLeak:
     def test_the_forwarded_tracker_token_is_redacted_wherever_it_appears(self, monkeypatch):
         """Exact-match on the value Helios itself put in the child environment:
         zero false positives by construction, and not limited to NAME=value."""
-        monkeypatch.setenv("NORVI_TRACKER_API_TOKEN", self.SEVENTY)
-        out = od._scrub_tool_output(f"curl -H 'Authorization: Bearer {self.SEVENTY}' https://jira/x\n"
-                                    f"# the token is {self.SEVENTY} and it works")
-        assert self.SEVENTY not in out
+        monkeypatch.setenv("NORVI_TRACKER_API_TOKEN", self.PREFIXLESS)
+        out = od._scrub_tool_output(f"curl -H 'Authorization: Bearer {self.PREFIXLESS}' https://tracker.example/x\n"
+                                    f"# the token is {self.PREFIXLESS} and it works")
+        assert self.PREFIXLESS not in out
         assert "redacted recognisable credentials" in out
 
     def test_the_openrouter_key_itself_is_redacted(self, monkeypatch):

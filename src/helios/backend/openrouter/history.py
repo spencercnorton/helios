@@ -45,7 +45,7 @@ __all__ = [
 
 _MIRROR_VERSION = _VERSION_TAGS[model_catalog.PROVIDER_OPENROUTER]
 
-# ponytail: chars/4 instead of a real tokenizer. No tokenizer is available for
+# Simplification: chars/4 instead of a real tokenizer. No tokenizer is available for
 # an arbitrary OpenRouter model anyway (345 models, many vocabularies), and the
 # CONTEXT_LENGTH retry in the driver is the backstop when this under-counts.
 # Upgrade path if sessions start mis-trimming: per-vendor tiktoken/HF tokenizer.

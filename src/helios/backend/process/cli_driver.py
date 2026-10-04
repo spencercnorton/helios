@@ -313,7 +313,7 @@ class ClaudeCliDriver(UserMessageQueueMixin, GObject.Object):
         #: at the spawn site. A driver instance is one process (`start()`
         #: returns early once `_proc` is set, and `_proc` is never cleared), so
         #: "a respawn" means a NEW DRIVER, and the window drops this one.
-        #: ponytail: per-process, not per-Work. execution_attempts already has
+        #: Known limit: per-process, not per-Work. execution_attempts already has
         #: usage_json/cost_micro_usd for durable per-Work totals when after-
         #: the-fact analysis is wanted; the ticket's pain was live blindness.
         self._spend = SpendAccumulator()
@@ -3141,7 +3141,7 @@ def session_permission_rule(tool_name: str, raw_input: object) -> dict | None:
     if not name:
         return None
     if name != "Bash":
-        # ponytail: tool-wide for everything else. Read/Edit/Write rule content
+        # Simplification: tool-wide for everything else. Read/Edit/Write rule content
         # is a path-pattern dialect of Claude's own; deriving it here would
         # duplicate the matcher we are deliberately delegating to. Narrow these
         # per-tool only if a blanket session grant proves too coarse in use.

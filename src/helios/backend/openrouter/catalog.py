@@ -137,7 +137,7 @@ def supports_tools(row: object) -> bool:
 #: driver refuses `set_effort` when the endpoint does not declare `reasoning`,
 #: because `require_parameters: true` would otherwise route the request away.
 #:
-#: ponytail: widen this when the wire mapping learns to distinguish them.
+#: Widen this when the wire mapping learns to distinguish them.
 _REASONING_EFFORTS: tuple[tuple[str, str], ...] = (
     ("off", "No reasoning"),
     ("low", "Low reasoning effort"),

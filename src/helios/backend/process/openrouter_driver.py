@@ -174,7 +174,7 @@ _MIN_USEFUL_COMPLETION = 256
 #: as exact is therefore not an upper bound, and the spend ceiling it feeds is
 #: not a ceiling (a review finding). The margin rounds the worst
 #: measured ratio up. It is a measured bound over the tokenizers probed, not a
-#: proof — see the ponytail note on ``history._CHARS_PER_TOKEN`` for the real
+#: proof — see the note on ``history._CHARS_PER_TOKEN`` for the real
 #: upgrade path, a per-vendor tokenizer.
 _PROMPT_ESTIMATE_MARGIN = 1.6
 
@@ -293,18 +293,17 @@ def _scrub_tool_output(content: str) -> str:
     This provider is the one path in Helios where tool results leave the
     machine: the array this feeds is POSTed to a third-party endpoint on every
     later round and is also persisted verbatim under
-    ``~/.helios/openrouter-sessions/``. The estate's scrubber already runs over
+    ``~/.helios/openrouter-sessions/``. Helios's scrubber already runs over
     the durable Work ledger and over approval prompts; it did not run here, so
-    one approved ``env`` uploaded whatever the Bash tool's environment holds —
-    measured 2026-09-03, that includes an admin-scoped tracker token the
-    session is deliberately granted.
+    one approved ``env`` uploaded whatever the Bash tool's environment holds,
+    including any integration token the session is deliberately forwarded.
 
     Three passes, from most to least certain:
 
     1. **Exact known values** — the credentials Helios itself forwarded or
        holds. Zero false positives; catches the concrete motivating leak in any
-       surrounding text. a review finding was right that shape rules alone
-       could not: that token is 70 random characters with no prefix.
+       surrounding text, including tokens with no recognisable prefix or
+       shape, which the shape rules below cannot catch.
     2. **Complete env-assignment lines** with a credential-shaped UPPER_CASE
        name — the ``env`` / ``.env`` / ``export`` shape — for credentials
        Helios does not know about.
@@ -321,7 +320,7 @@ def _scrub_tool_output(content: str) -> str:
     The model is told when something was removed so it does not read the gap as
     the file's real contents.
 
-    ponytail: pattern matching plus the values Helios knows; it is a reduction
+    Known limit: pattern matching plus the values Helios knows; it is a reduction
     in blast radius, not a boundary. The boundary is the approval prompt, which
     names the destination.
     """
