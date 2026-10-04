@@ -4,6 +4,12 @@ All notable changes to Helios are documented here. Each release is a
 `vX.Y.Z` tag on `main`; its GitHub Release carries the `.deb`, the tagged
 source (`source.tar.gz`) and `SHA256SUMS.txt`.
 
+## 0.99.8 — 2026-10-04
+
+### Fixed
+
+- The Release workflow's build artifact is now `helios-debian-candidate` and carries the package with its own `SHA256SUMS.txt`, so a downstream archive can check that the released `.deb` is byte-for-byte the one CI built for the tag.
+
 ## 0.99.7 — 2026-10-04
 
 ### Changed
