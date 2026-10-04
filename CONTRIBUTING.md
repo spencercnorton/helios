@@ -59,7 +59,7 @@ run it with a throwaway home: `HOME=$(mktemp -d) ./scripts/helios`.
 
 ### Backend tests
 
-This is what CI (`.github/workflows/ci.yml`) runs: ubuntu-latest, Python
+This is what CI (`.github/workflows/ci.yml`) runs: ubuntu-24.04, Python
 3.13, and a `gi` stub on `PYTHONPATH` that raises `ModuleNotFoundError`, so
 every GTK test skips. Reproduce it (CI also passes `-q`, which this block
 drops so the summary line prints — see below):
@@ -73,7 +73,7 @@ PYTHONPATH="$HOME/nogtk" python3 -m pytest -p no:cacheprovider
 The last line is the summary, for example `1816 passed, 91 skipped in 18.9s`
 (one fewer pass and one more skip on Python 3.11 or 3.12). Roughly 90 skips
 are expected; adding `-rs` to the command lists the reasons, and every one
-should read `gtk hidden` or `not part of this tree` (on Python 3.11 or 3.12
+should read `gtk hidden` (on Python 3.11 or 3.12
 one more reads `pathlib.full_match is 3.13+`). Do not add `-q`:
 `pyproject.toml` already sets it, and a second `-q` suppresses the summary
 line. Paste that line in the pull request.
@@ -133,9 +133,9 @@ and no display-unavailable skips.
   reformats a file is two pull requests.
 - Tests: a bug fix carries a regression test; a feature carries the smallest
   test that fails without it.
-- Do not bump the version. `src/helios/__init__.py` and `pyproject.toml`
-  must stay equal (a test enforces it); the maintainer bumps both at
-  release. There is no changelog to edit in this tree.
+- Do not bump the version or edit `CHANGELOG.md`. `src/helios/__init__.py`
+  and `pyproject.toml` must stay equal (a test enforces it); the maintainer
+  bumps both and writes the changelog entry at release.
 
 ## Pull request checklist
 
