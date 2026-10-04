@@ -50,10 +50,13 @@ jobs:
           SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
           export SOURCE_DATE_EPOCH
           scripts/build.sh dist
+          (cd dist && sha256sum -- *.deb > SHA256SUMS.txt)
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: helios-deb
-          path: dist/*.deb
+          name: helios-debian-candidate
+          path: |
+            dist/*.deb
+            dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
   publish:
@@ -74,10 +77,11 @@ jobs:
         run: mkdir -p release-assets
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: helios-deb
+          name: helios-debian-candidate
           path: release-assets
       - name: Package the exact public source and checksum everything
         run: |
+          rm release-assets/SHA256SUMS.txt
           git archive --format=tar.gz --prefix=source/ HEAD > release-assets/source.tar.gz
           cd release-assets
           sha256sum -- * > SHA256SUMS.txt
