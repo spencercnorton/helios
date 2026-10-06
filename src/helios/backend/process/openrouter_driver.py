@@ -1769,7 +1769,7 @@ class OpenRouterDriver(UserMessageQueueMixin, GObject.Object):
         try:
             if self._estate is not None and self._estate.owns(call.name):
                 return False
-            arguments = json.loads(call.arguments_json)
+            arguments = tools.parse_tool_arguments(call.arguments_json)
             return isinstance(arguments, dict) and not tools.outside_target(
                 call.name, arguments, self._cwd,
             )
@@ -1836,12 +1836,7 @@ class OpenRouterDriver(UserMessageQueueMixin, GObject.Object):
 
     def _execute_tool_call(self, call: or_chat.ToolCallRequest) -> tuple[str, bool]:
         """Gate one tool call through the permission mode, then execute."""
-        try:
-            arguments = json.loads(call.arguments_json) if call.arguments_json else {}
-            if not isinstance(arguments, dict):
-                arguments = {"_raw": call.arguments_json}
-        except json.JSONDecodeError:
-            arguments = {"_raw": call.arguments_json}
+        arguments = tools.parse_tool_arguments(call.arguments_json)
 
         # A plan is a UI event, not a filesystem effect: surface it before the
         # tool returns so the pane fills while the model is still explaining.

@@ -327,3 +327,43 @@ class TestTheNameRuleStaysOnOneRealLine:
         cleaned, changed = scrub_sensitive(f"password{sep}={sep}hunter2correcthorse")
         assert changed is True, sep
         assert "hunter2correcthorse" not in cleaned
+
+
+
+class TestInlineThinkingAndThoughtDeltas:
+    def test_inline_thinking_demuxes_into_reasoning_and_text(self):
+        chunks = [
+            {"choices": [{"delta": {"content": "<think>Thinking through the problem."}}]},
+            {"choices": [{"delta": {"content": " Still thinking...</think>Here is the answer."}}]},
+            {"choices": [{"finish_reason": "stop"}]},
+        ]
+        events = _consume(*chunks)
+        reasoning = [e.text for e in events if isinstance(e, or_chat.ReasoningDelta)]
+        text = [e.text for e in events if isinstance(e, or_chat.TextDelta)]
+        assert "".join(reasoning) == "Thinking through the problem. Still thinking..."
+        assert "".join(text) == "Here is the answer."
+
+    def test_inline_thinking_split_across_tag_boundary(self):
+        chunks = [
+            {"choices": [{"delta": {"content": "Prefix <th"}}]},
+            {"choices": [{"delta": {"content": "ink>inner thought</th"}}]},
+            {"choices": [{"delta": {"content": "ink> suffix"}}]},
+            {"choices": [{"finish_reason": "stop"}]},
+        ]
+        events = _consume(*chunks)
+        reasoning = [e.text for e in events if isinstance(e, or_chat.ReasoningDelta)]
+        text = [e.text for e in events if isinstance(e, or_chat.TextDelta)]
+        assert "".join(reasoning) == "inner thought"
+        assert "".join(text) == "Prefix  suffix"
+
+    def test_thought_delta_field_yields_reasoning(self):
+        chunks = [
+            {"choices": [{"delta": {"thought": "Direct thought block"}}]},
+            {"choices": [{"delta": {"content": "Direct answer"}}]},
+            {"choices": [{"finish_reason": "stop"}]},
+        ]
+        events = _consume(*chunks)
+        reasoning = [e.text for e in events if isinstance(e, or_chat.ReasoningDelta)]
+        text = [e.text for e in events if isinstance(e, or_chat.TextDelta)]
+        assert reasoning == ["Direct thought block"]
+        assert text == ["Direct answer"]

@@ -45,6 +45,7 @@ __all__ = [
     "ChatErrorKind",
     "ChatUsage",
     "Done",
+    "InlineThinkingFilter",
     "ReasoningDelta",
     "TextDelta",
     "ToolCallDelta",
@@ -410,6 +411,83 @@ def _stream_once(
         _safe_close(response)
 
 
+class InlineThinkingFilter:
+    """Demux inline <think>...</think> tags from text content streams.
+
+    DeepSeek R1 and Qwen reasoning models stream thinking directly inside
+    the content field wrapped in <think>...</think> tags. This filter
+    routes tokens between <think> and </think> to ReasoningDelta, and other
+    tokens to TextDelta.
+    """
+
+    OPEN_TAG = "<think>"
+    CLOSE_TAG = "</think>"
+
+    def __init__(self) -> None:
+        self.in_think = False
+        self._buf = ""
+
+    def feed(self, text: str) -> Iterator[TextDelta | ReasoningDelta]:
+        self._buf += text
+        while self._buf:
+            if not self.in_think:
+                open_idx = self._buf.find(self.OPEN_TAG)
+                if open_idx != -1:
+                    prefix = self._buf[:open_idx]
+                    if prefix:
+                        yield TextDelta(prefix)
+                    self.in_think = True
+                    self._buf = self._buf[open_idx + len(self.OPEN_TAG):]
+                    continue
+                matched_prefix = False
+                max_check = min(len(self.OPEN_TAG) - 1, len(self._buf))
+                for i in range(max_check, 0, -1):
+                    candidate = self._buf[-i:]
+                    if self.OPEN_TAG.startswith(candidate):
+                        emit_text = self._buf[:-i]
+                        if emit_text:
+                            yield TextDelta(emit_text)
+                        self._buf = candidate
+                        matched_prefix = True
+                        break
+                if matched_prefix:
+                    break
+                yield TextDelta(self._buf)
+                self._buf = ""
+            else:
+                close_idx = self._buf.find(self.CLOSE_TAG)
+                if close_idx != -1:
+                    thought = self._buf[:close_idx]
+                    if thought:
+                        yield ReasoningDelta(thought)
+                    self.in_think = False
+                    self._buf = self._buf[close_idx + len(self.CLOSE_TAG):]
+                    continue
+                matched_prefix = False
+                max_check = min(len(self.CLOSE_TAG) - 1, len(self._buf))
+                for i in range(max_check, 0, -1):
+                    candidate = self._buf[-i:]
+                    if self.CLOSE_TAG.startswith(candidate):
+                        emit_thought = self._buf[:-i]
+                        if emit_thought:
+                            yield ReasoningDelta(emit_thought)
+                        self._buf = candidate
+                        matched_prefix = True
+                        break
+                if matched_prefix:
+                    break
+                yield ReasoningDelta(self._buf)
+                self._buf = ""
+
+    def flush(self) -> Iterator[TextDelta | ReasoningDelta]:
+        if self._buf:
+            if self.in_think:
+                yield ReasoningDelta(self._buf)
+            else:
+                yield TextDelta(self._buf)
+            self._buf = ""
+
+
 def _consume_stream(
     chunks,
     *,
@@ -426,6 +504,7 @@ def _consume_stream(
     acceptance_reported = False
     response_started = False
     usage = ChatUsage()
+    thinking_filter = InlineThinkingFilter()
     try:
         events = iter_sse_events(
             chunks,
@@ -475,8 +554,13 @@ def _consume_stream(
                     text = delta.get("content")
                     if isinstance(text, str) and text:
                         response_started = True
-                        yield TextDelta(text)
-                    reasoning = delta.get("reasoning") or delta.get("reasoning_content")
+                        for ev in thinking_filter.feed(text):
+                            yield ev
+                    reasoning = (
+                        delta.get("reasoning")
+                        or delta.get("reasoning_content")
+                        or delta.get("thought")
+                    )
                     if isinstance(reasoning, str) and reasoning:
                         response_started = True
                         yield ReasoningDelta(reasoning)
@@ -526,6 +610,8 @@ def _consume_stream(
             "stream ended without a terminal finish reason",
             response_started=response_started,
         )
+    for ev in thinking_filter.flush():
+        yield ev
     for index in sorted(tool_buffers):
         buffered = tool_buffers[index]
         arguments = "".join(buffered["args"])
