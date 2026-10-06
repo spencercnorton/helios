@@ -4650,6 +4650,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
                         driver.connect(
                             "provider-notice", self._on_codex_provider_notice
                         ),
+                        driver.connect("hook-notice", self._on_codex_hook_notice),
                         driver.connect(
                             "thread-forked", self._on_codex_thread_forked
                         ),
@@ -8124,6 +8125,10 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         self._composer.set_busy(False)
         self._chat_toolbar.set_busy(False)
         self._activity.clear()
+
+    def _on_codex_hook_notice(self, drv, notice) -> None:
+        if not self._destroyed and self._drv_is_current(drv):
+            self._transcript.append_notice(notice.title, notice.detail, notice.severity)
 
     def _on_claude_hook_event(self, drv, payload: dict) -> None:
         """Surface a hook lifecycle notice — blocked, asked, or failed — in

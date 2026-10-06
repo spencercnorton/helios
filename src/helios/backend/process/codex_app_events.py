@@ -31,6 +31,8 @@ from helios.backend.process.codex_events import (
     _strip_shell_wrapper,
 )
 from helios.backend.process.streaming import Block, StreamingAssistant
+from helios.backend.hook_events import summarize_codex_hook
+from helios.backend.rate_limits import merge_rate_limit_snapshot
 from helios.backend.transcript import ToolResult
 
 # App Server v2 notification methods.  Keep these string-exact: the process
@@ -51,6 +53,8 @@ METHOD_FILE_CHANGE_PATCH_UPDATED = "item/fileChange/patchUpdated"
 METHOD_MCP_PROGRESS = "item/mcpToolCall/progress"
 METHOD_THREAD_TOKEN_USAGE = "thread/tokenUsage/updated"
 METHOD_ACCOUNT_RATE_LIMITS = "account/rateLimits/updated"
+METHOD_HOOK_STARTED = "hook/started"
+METHOD_HOOK_COMPLETED = "hook/completed"
 METHOD_TURN_DIFF_UPDATED = "turn/diff/updated"
 METHOD_TURN_PLAN_UPDATED = "turn/plan/updated"
 METHOD_ERROR = "error"
@@ -78,6 +82,8 @@ HANDLED_NOTIFICATION_METHODS: frozenset[str] = frozenset(
         METHOD_MCP_PROGRESS,
         METHOD_THREAD_TOKEN_USAGE,
         METHOD_ACCOUNT_RATE_LIMITS,
+        METHOD_HOOK_STARTED,
+        METHOD_HOOK_COMPLETED,
         METHOD_TURN_DIFF_UPDATED,
         METHOD_TURN_PLAN_UPDATED,
         METHOD_ERROR,
@@ -99,6 +105,7 @@ ACT_DIFF_UPDATED = "diff-updated"
 ACT_USAGE_UPDATED = "usage-updated"
 ACT_RATE_LIMIT_UPDATED = "rate-limit-updated"
 ACT_CONTEXT_COMPACTED = "context-compacted"
+ACT_HOOK_NOTICE = "hook-notice"
 
 _ACTIVITY_ITEM_TYPES = {
     "commandExecution",
@@ -137,6 +144,8 @@ class CodexAppEventAccumulator:
     _lifecycle_seen: set[tuple[str, str]] = field(default_factory=set)
     _last_token_usage: dict[str, Any] = field(default_factory=dict)
     _rate_limits: dict[str, Any] = field(default_factory=dict)
+    _rate_limits_by_id: dict[str, dict[str, Any]] = field(default_factory=dict)
+    _hook_notice_ids: set[str] = field(default_factory=set)
     _turn_started_monotonic: float = 0.0
     _announced: bool = False
 
@@ -208,6 +217,23 @@ class CodexAppEventAccumulator:
 
         if not self._belongs_to_thread(params):
             return []
+
+        if method in {METHOD_HOOK_STARTED, METHOD_HOOK_COMPLETED}:
+            if method == METHOD_HOOK_STARTED:
+                return []
+            hook_turn = params.get("turnId")
+            if self.turn_id and hook_turn and hook_turn != self.turn_id:
+                return []
+            notice = summarize_codex_hook(params)
+            run = params.get("run")
+            run_id = run.get("id") if isinstance(run, dict) else None
+            if notice is not None and isinstance(run_id, str) and run_id:
+                if run_id in self._hook_notice_ids:
+                    return []
+                if len(self._hook_notice_ids) >= 128:
+                    self._hook_notice_ids.clear()
+                self._hook_notice_ids.add(run_id)
+            return [Action(ACT_HOOK_NOTICE, notice)] if notice is not None else []
 
         if method == METHOD_TURN_STARTED:
             return self._start_turn(params)
@@ -806,7 +832,13 @@ class CodexAppEventAccumulator:
         snapshot = params.get("rateLimits")
         if not isinstance(snapshot, dict):
             return []
-        self._rate_limits = _merge_non_null(self._rate_limits, snapshot)
+        limit_id = snapshot.get("limitId") or "codex"
+        if not isinstance(limit_id, str):
+            return []
+        merged = merge_rate_limit_snapshot(self._rate_limits_by_id.get(limit_id, {}), snapshot)
+        merged["limitId"] = limit_id
+        self._rate_limits_by_id[limit_id] = merged
+        self._rate_limits = merged
         return [
             Action(
                 ACT_RATE_LIMIT_UPDATED,
@@ -1280,18 +1312,6 @@ def _normalize_usage_breakdown(raw: Any) -> dict[str, int]:
         "reasoningOutputTokens": _nonnegative_int(raw.get("reasoningOutputTokens")),
         "totalTokens": _nonnegative_int(raw.get("totalTokens")),
     }
-
-
-def _merge_non_null(current: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
-    merged = copy.deepcopy(current)
-    for key, value in update.items():
-        if value is None:
-            continue
-        if isinstance(value, dict) and isinstance(merged.get(key), dict):
-            merged[key] = _merge_non_null(merged[key], value)
-        else:
-            merged[key] = copy.deepcopy(value)
-    return merged
 
 
 def _display_value(value: Any) -> str:

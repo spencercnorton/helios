@@ -290,6 +290,36 @@ def test_start_binds_fresh_native_thread_with_permission_profile(driver_factory)
     driver.stop(interrupt=False)
 
 
+def test_rate_limit_initial_read_and_updates_share_the_same_bucket_cache(driver_factory):
+    driver = driver_factory(FakeHub())
+    rows = []
+    driver.connect("rate-limit-updated", lambda _d, row: rows.append(row))
+    result = Future()
+    result.set_result({"rateLimitsByLimitId": {
+        "codex": {"limitName": "Standard", "primary": {"usedPercent": 100, "windowDurationMins": 300},
+                  "rateLimitReachedType": "rate_limit_reached"},
+        "fast": {"primary": {"usedPercent": 10}},
+    }})
+    driver._apply_initial_rate_limits(result)
+    driver._consume_rate_limit_snapshot({"limitId": "fast", "primary": {"usedPercent": 20}})
+    assert rows[-1]["status"] == "allowed"
+    assert rows[-1]["label"] == "Codex primary window"
+    driver._consume_rate_limit_snapshot({"limitId": "codex", "primary": {"usedPercent": 0}, "rateLimitReachedType": None})
+    assert rows[-1]["status"] == "allowed"
+    assert rows[-1]["label"] == "Standard · 5-hour usage"
+    assert rows[-1]["usedPercent"] == 0
+
+
+def test_native_hook_action_uses_its_provider_specific_signal(driver_factory):
+    from helios.backend.hook_events import HookNotice
+    driver = driver_factory(FakeHub())
+    notices = []
+    driver.connect("hook-notice", lambda _d, notice: notices.append(notice))
+    notice = HookNotice("warning", "Before tool use blocked", "Use an approved directory.")
+    driver._dispatch_app_action(events.Action(events.ACT_HOOK_NOTICE, notice))
+    assert notices == [notice]
+
+
 def test_resume_uses_native_thread_resume(driver_factory):
     hub = FakeHub(thread_id="existing")
     driver = driver_factory(hub, resume="existing")
