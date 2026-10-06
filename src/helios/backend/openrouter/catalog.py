@@ -61,13 +61,14 @@ class CatalogError(Exception):
 # Display priority for vendor groups; everything else sorts alphabetically
 # after these.
 _VENDOR_PRIORITY: tuple[str, ...] = (
-    "google",
     "deepseek",
     "moonshotai",
     "qwen",
     "x-ai",
     "meta-llama",
     "mistralai",
+    "cohere",
+    "minimax",
 )
 
 _VENDOR_LABELS: dict[str, str] = {

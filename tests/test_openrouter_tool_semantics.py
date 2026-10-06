@@ -370,3 +370,59 @@ def test_read_defaults_to_focused_window_and_supports_explicit_continuation(tmp_
     assert not error
     assert "201: row 201" in continued and "500: row 500" in continued
     assert "501: row 501" not in continued
+
+def test_edit_strips_leading_line_numbers_from_read_output(tmp_path):
+    target = tmp_path / "hello.py"
+    target.write_text("def greet():\n    return 'hello'\n", encoding="utf-8")
+    out, is_error = t.execute_tool(
+        "Edit",
+        {
+            "file_path": str(target),
+            "old_string": "1: def greet():\n2:     return 'hello'",
+            "new_string": "1: def greet():\n2:     return 'world'",
+        },
+        cwd=str(tmp_path),
+    )
+    assert not is_error, out
+    assert target.read_text(encoding="utf-8") == "def greet():\n    return 'world'\n"
+
+
+def test_edit_strips_single_line_number_from_read_output(tmp_path):
+    target = tmp_path / "hello.py"
+    target.write_text("x = 10\ny = 20\n", encoding="utf-8")
+    out, is_error = t.execute_tool(
+        "Edit",
+        {
+            "file_path": str(target),
+            "old_string": "2: y = 20",
+            "new_string": "y = 30",
+        },
+        cwd=str(tmp_path),
+    )
+    assert not is_error, out
+    assert target.read_text(encoding="utf-8") == "x = 10\ny = 30\n"
+
+
+def test_parse_tool_arguments_handles_markdown_and_raw():
+    # Plain JSON
+    assert t.parse_tool_arguments('{"a": 1}') == {"a": 1}
+
+    # Wrapped in markdown json block
+    wrapped = "```json\n{\"path\": \"test.py\"}\n```"
+    assert t.parse_tool_arguments(wrapped) == {"path": "test.py"}
+
+    # Wrapped in markdown without language tag
+    wrapped_bare = "```\n{\"path\": \"test.py\"}\n```"
+    assert t.parse_tool_arguments(wrapped_bare) == {"path": "test.py"}
+
+    # Unescaped control characters in JSON string
+    control_char_json = '{"content": "hello\nworld"}'
+    assert t.parse_tool_arguments(control_char_json) == {"content": "hello\nworld"}
+
+    # Empty or whitespace
+    assert t.parse_tool_arguments("") == {}
+    assert t.parse_tool_arguments("   ") == {}
+
+    # Invalid JSON string
+    assert t.parse_tool_arguments("not json") == {"_raw": "not json"}
+

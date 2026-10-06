@@ -67,6 +67,7 @@ __all__ = [
     "decide",
     "execute_tool",
     "outside_target",
+    "parse_tool_arguments",
     "touches_outside_workspace",
 ]
 
@@ -263,7 +264,7 @@ TOOL_SCHEMAS: tuple[dict, ...] = (
     ),
     _schema(
         "Read",
-        "Read a text file from the filesystem. Returns numbered lines; defaults to 200 lines. Use offset/limit for focused follow-up reads.",
+        "Read a text file from the filesystem. Returns numbered lines (e.g. 1: code); defaults to 200 lines. Use offset/limit for focused follow-up reads.",
         {
             "path": {"type": "string", "description": "File path (absolute or relative to the working directory)"},
             "offset": {"type": "integer", "description": "1-based line number to start from", "minimum": 1},
@@ -282,7 +283,7 @@ TOOL_SCHEMAS: tuple[dict, ...] = (
     ),
     _schema(
         "Edit",
-        "Replace an exact string in a file. Fails if the string is absent or appears more than once (unless replace_all).",
+        "Replace an exact string in a file. Fails if the string is absent or appears more than once (unless replace_all). Do not include line numbers in old_string or new_string.",
         {
             "file_path": {"type": "string", "description": "File to edit"},
             "old_string": {"type": "string", "description": "Exact text to replace"},
@@ -500,6 +501,76 @@ def _run_write(arguments: dict, cwd: str) -> str:
     return f"Wrote {len(content)} chars to {path}"
 
 
+def parse_tool_arguments(raw_json: str) -> dict:
+    """Safely parse model-generated tool argument JSON strings.
+
+    Models occasionally wrap arguments in markdown code blocks or produce unescaped
+    control characters. Fall back gracefully to raw string wrapping when parsing fails.
+    """
+    if not raw_json or not raw_json.strip():
+        return {}
+    raw = raw_json.strip()
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            return parsed
+        return {"_raw": raw_json}
+    except json.JSONDecodeError:
+        pass
+
+    if raw.startswith("```"):
+        lines = raw.splitlines()
+        if len(lines) >= 2 and lines[-1].strip() == "```":
+            inner = "\n".join(lines[1:-1]).strip()
+            if inner.lower().startswith("json"):
+                inner = inner[4:].strip()
+            try:
+                parsed = json.loads(inner, strict=False)
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+
+    try:
+        parsed = json.loads(raw, strict=False)
+        if isinstance(parsed, dict):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
+    return {"_raw": raw_json}
+
+
+def _strip_line_numbers(s: str) -> str:
+    """Strip leading line numbers formatted by Read (e.g. 12: code)."""
+    lines = s.splitlines(keepends=True)
+    if not lines:
+        return s
+    stripped: list[str] = []
+    has_numbered_line = False
+    for line in lines:
+        end = ""
+        body = line
+        if body.endswith("\r\n"):
+            end = "\r\n"
+            body = body[:-2]
+        elif body.endswith("\n"):
+            end = "\n"
+            body = body[:-1]
+        elif body.endswith("\r"):
+            end = "\r"
+            body = body[:-1]
+
+        m = re.match(r"^\s*\d+:(?: (.*)|$)", body)
+        if m:
+            has_numbered_line = True
+            content = m.group(1) or ""
+            stripped.append(content + end)
+        else:
+            stripped.append(line)
+    return "".join(stripped) if has_numbered_line else s
+
+
 def _run_edit(arguments: dict, cwd: str) -> str:
     path = _resolve(arguments.get("file_path"), cwd, what="file_path")
     if not path.is_file():
@@ -511,7 +582,13 @@ def _run_edit(arguments: dict, cwd: str) -> str:
     text = _read_text(path)
     count = text.count(old)
     if count == 0:
-        raise ToolFailed("old_string not found in file")
+        cleaned_old = _strip_line_numbers(old)
+        if cleaned_old != old and text.count(cleaned_old) > 0:
+            old = cleaned_old
+            new = _strip_line_numbers(new)
+            count = text.count(old)
+        else:
+            raise ToolFailed("old_string not found in file")
     replace_all = arguments.get("replace_all") is True
     if count > 1 and not replace_all:
         raise ToolFailed(f"old_string appears {count} times; pass replace_all or a more specific string")
