@@ -393,6 +393,7 @@ class ChatToolbar(Gtk.Box):
         label = next(
             (e.label for e in self._choices if e.id == alias), alias or "Default"
         )
+        self._model_label.set_label(label)
         # The unified picker lists all available models grouped by provider.
         # Switching models updates the current provider filter for permissions
         # and execution controls.
