@@ -529,6 +529,10 @@ def test_provider_routing():
     assert mc.provider_for("o4-mini") == mc.PROVIDER_OPENAI
     assert mc.provider_for("codex-mini-latest") == mc.PROVIDER_OPENAI
     assert mc.provider_for("chatgpt-4o-latest") == mc.PROVIDER_OPENAI
+    assert mc.provider_for("gemini-2.5-pro") == mc.PROVIDER_GOOGLE
+    assert mc.provider_for("gemini-2.5-flash") == mc.PROVIDER_GOOGLE
+    assert mc.provider_for("gemini-3.6-flash") == mc.PROVIDER_GOOGLE
+    assert mc.provider_for("agy-gemini") == mc.PROVIDER_GOOGLE
 
 
 def test_context_windows():
@@ -541,3 +545,35 @@ def test_context_windows():
     assert mc.context_window_for("gpt-5.6-sol") == 1_050_000
     assert mc.context_window_for("o4-mini") == 200_000
     assert mc.context_window_for("gpt-4.1") == 1_000_000
+    assert mc.context_window_for("gemini-2.5-pro") == 2_000_000
+    assert mc.context_window_for("gemini-2.5-flash") == 1_000_000
+
+
+def test_openrouter_model_selectable_excludes_native_subscription_models():
+    # Native subscription models MUST NOT be selectable on OpenRouter
+    assert mc.openrouter_model_selectable("google/gemini-2.5-pro") is False
+    assert mc.openrouter_model_selectable("google/gemini-2.5-flash") is False
+    assert mc.openrouter_model_selectable("anthropic/claude-3.7-sonnet") is False
+    assert mc.openrouter_model_selectable("openai/gpt-4o") is False
+    assert mc.openrouter_model_selectable("openai/o3-mini") is False
+    # Models outside native subscriptions are allowed
+    assert mc.openrouter_model_selectable("meta-llama/llama-3.3-70b-instruct") is True
+    assert mc.openrouter_model_selectable("deepseek/deepseek-chat") is True
+    assert mc.openrouter_model_selectable("moonshotai/kimi-k2") is True
+
+
+def test_google_entries_and_preferred(monkeypatch):
+    import types
+    fake_auth_ok = types.SimpleNamespace(ok=True, logged_in=True, email="user@gmail.com")
+    fake_auth_fail = types.SimpleNamespace(ok=False, logged_in=False, email="")
+
+    entries, status = mc.google_entries(auth=fake_auth_ok)
+    assert status == "subscription"
+    assert len(entries) == 4
+    assert any(e.id == "gemini-2.5-pro" for e in entries)
+    assert mc.preferred_google_model(entries) == "gemini-2.5-pro"
+
+    entries_fail, status_fail = mc.google_entries(auth=fake_auth_fail)
+    assert status_fail == "not-logged-in"
+    assert entries_fail == []
+    assert mc.preferred_google_model([]) == "gemini-2.5-pro"

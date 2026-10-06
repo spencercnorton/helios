@@ -53,6 +53,7 @@ from helios.backend.process.message_queue import (
 from helios.backend.process.openrouter_driver import (
     OpenRouterDriver,
 )
+from helios.backend.process.gemini_driver import GeminiCliDriver
 from helios.backend.process.driver_manager import (
     COMMON_DRIVER_SIGNALS,
     DriverManager,
@@ -540,6 +541,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         for prov in (
             model_catalog.PROVIDER_ANTHROPIC,
             model_catalog.PROVIDER_OPENAI,
+            model_catalog.PROVIDER_GOOGLE,
             model_catalog.PROVIDER_OPENROUTER,
         ):
             remembered = self._ui_state.get(f"model_{prov}", None)
@@ -790,11 +792,12 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         self._work_indicator = WorkIndicator()
         header.pack_start(self._work_indicator)
 
-        # Centered Claude/GPT provider toggle — quick backend switch without
-        # opening the model popover. Each side remembers the last model used
-        # with that provider; crossing providers stages a fresh chat in the
-        # current cwd so the next prompt really goes to that backend.
-        header.set_title_widget(self._build_provider_toggle())
+        # Provider toggle is eliminated from the header bar in favor of direct
+        # unified per-session model selection in the chat toolbar dropdown.
+        # Initialize internal toggle references for compatibility, but mount an
+        # empty widget in the center header.
+        self._provider_toggle_box = self._build_provider_toggle()
+        header.set_title_widget(Gtk.Box())
 
         # Right side.
         search_btn = Gtk.Button.new_from_icon_name("system-search-symbolic")
@@ -1111,6 +1114,18 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
                 )
             except Exception as e:  # noqa: BLE001
                 _log.warning("OpenRouter model catalog refresh failed: %s", e)
+            # Google / Gemini subscription catalog
+            try:
+                g_entries, g_status = model_catalog.google_entries(force=force)
+                if g_entries:
+                    entries = entries + g_entries
+                _log.info(
+                    "model catalog: %d entries (google: %s)",
+                    len(entries),
+                    g_status,
+                )
+            except Exception as e:  # noqa: BLE001
+                _log.warning("Google model catalog refresh failed: %s", e)
             GLib.idle_add(
                 self._apply_model_catalog,
                 entries,
@@ -2532,6 +2547,24 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         )
         inner.append(self._new_gpt_btn)
 
+        self._new_gemini_btn = Gtk.Button()
+        self._new_gemini_btn.add_css_class("flat")
+        self._new_gemini_btn.set_child(
+            self._new_chat_row(
+                "Gemini Chat",
+                "Use Google subscription in this working directory",
+                "weather-clear-symbolic",
+            )
+        )
+        self._new_gemini_btn.connect(
+            "clicked",
+            lambda *_: (
+                pop.popdown(),
+                self._start_new_chat_with_provider(model_catalog.PROVIDER_GOOGLE),
+            ),
+        )
+        inner.append(self._new_gemini_btn)
+
         self._new_or_btn = Gtk.Button()
         self._new_or_btn.add_css_class("flat")
         self._new_or_btn.set_child(
@@ -2602,6 +2635,16 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
                 "Start a new GPT chat"
                 if available
                 else "Add an OpenAI key in Settings -> Providers to enable GPT"
+            )
+        gemini_btn = getattr(self, "_new_gemini_btn", None)
+        if gemini_btn is not None:
+            g_entries, _ = model_catalog.google_entries()
+            available = bool(g_entries)
+            gemini_btn.set_sensitive(available)
+            gemini_btn.set_tooltip_text(
+                "Start a new Gemini chat"
+                if available
+                else "Sign in to Google subscription in Settings → Providers"
             )
         or_btn = getattr(self, "_new_or_btn", None)
         if or_btn is not None:
@@ -3033,6 +3076,12 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             if remembered in valid:
                 return remembered
             return model_catalog.preferred_openai_model(self._openai_entries)
+        if provider == model_catalog.PROVIDER_GOOGLE:
+            google_entries, _ = model_catalog.google_entries()
+            valid = {e.id for e in google_entries}
+            if remembered in valid:
+                return remembered
+            return model_catalog.preferred_google_model(google_entries)
         if provider == model_catalog.PROVIDER_OPENROUTER:
             if model_catalog.openrouter_model_selectable(remembered):
                 return remembered
@@ -3814,9 +3863,11 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         if not alias:
             label = {
                 model_catalog.PROVIDER_OPENAI: "OpenAI",
+                model_catalog.PROVIDER_GOOGLE: "Google",
                 model_catalog.PROVIDER_OPENROUTER: "OpenRouter",
             }.get(provider, "Claude")
-            self._toast(f"No {label} models available — add a key in Settings → Providers.")
+            action = "sign in" if provider == model_catalog.PROVIDER_GOOGLE else "add a key"
+            self._toast(f"No {label} models available — {action} in Settings → Providers.")
             self._sync_provider_toggle()
             return
         self._apply_model_choice(alias, quiet=True)
@@ -4423,13 +4474,16 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
                 return False
         # The selected model decides the backend: OpenAI ids run through the
         # Codex CLI, OpenRouter ids (vendor/model) through the OpenRouter
-        # driver, everything else through claude. Same signal surface, so
-        # the rest of the window doesn't care which one it's driving.
+        # driver, Google subscription ids through the Gemini CLI driver,
+        # everything else through claude. Same signal surface, so the rest of
+        # the window doesn't care which one it's driving.
         _provider = model_catalog.provider_for(self._model)
         if _provider == model_catalog.PROVIDER_OPENAI:
             driver_cls = CodexAppServerDriver
         elif _provider == model_catalog.PROVIDER_OPENROUTER:
             driver_cls = OpenRouterDriver
+        elif _provider == model_catalog.PROVIDER_GOOGLE:
+            driver_cls = GeminiCliDriver
         else:
             driver_cls = ClaudeCliDriver
 
@@ -4447,6 +4501,8 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
                 # declare `reasoning`.
                 effort_kw["effort"] = spawn_effort_key
             elif driver_cls is CodexAppServerDriver and spawn_effort_key:
+                effort_kw["effort"] = spawn_effort_key
+            elif driver_cls is GeminiCliDriver and spawn_effort_key:
                 effort_kw["effort"] = spawn_effort_key
             elif spawn_effort_key:
                 effort_kw["effort"] = spawn_effort_key
@@ -4663,9 +4719,27 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
                         ),
                     ]
                 )
+            if isinstance(driver, GeminiCliDriver):
+                handlers.extend(
+                    [
+                        driver.connect(
+                            "turn-status-updated", self._on_native_turn_status
+                        ),
+                        driver.connect("plan-updated", self._on_native_plan_updated),
+                        driver.connect(
+                            "activity-updated", self._on_native_activity_updated
+                        ),
+                        driver.connect(
+                            "agents-updated", self._on_native_agents_updated
+                        ),
+                        driver.connect(
+                            "context-compacted", self._on_context_compacted
+                        ),
+                    ]
+                )
             if isinstance(
                 driver,
-                (ClaudeCliDriver, CodexAppServerDriver, OpenRouterDriver),
+                (ClaudeCliDriver, CodexAppServerDriver, OpenRouterDriver, GeminiCliDriver),
             ):
                 handlers.append(
                     driver.connect("budget-exhausted", self._on_budget_exhausted)
@@ -4767,6 +4841,8 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             provider = model_catalog.PROVIDER_OPENAI
         elif isinstance(driver, ClaudeCliDriver):
             provider = model_catalog.PROVIDER_ANTHROPIC
+        elif isinstance(driver, GeminiCliDriver):
+            provider = model_catalog.PROVIDER_GOOGLE
         else:
             return None
         scope = AgentActivityScope(

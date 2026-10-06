@@ -53,7 +53,7 @@ _CLAUDE_PROVIDER = "anthropic"
 # v0.57.1. Each canonical non-Claude provider gets its own bounded lane.
 # Anything unrecognized — a typo, a future provider id — shares ONE fail-closed
 # slot, so a free-form identifier still cannot mint extra concurrency.
-_PROVIDER_CONCURRENCY_LIMITS = {"openai": 4, "openrouter": 4}
+_PROVIDER_CONCURRENCY_LIMITS = {"google": 4, "openai": 4, "openrouter": 4}
 # Not a valid provider id (`_required_text` rejects empty), so a real provider
 # can never collide with the shared unknown lane.
 _UNKNOWN_PROVIDER_LANE = ""

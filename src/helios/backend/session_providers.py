@@ -38,11 +38,13 @@ _KNOWN_PROVIDERS = frozenset(
     {
         model_catalog.PROVIDER_ANTHROPIC,
         model_catalog.PROVIDER_OPENAI,
+        model_catalog.PROVIDER_GOOGLE,
         model_catalog.PROVIDER_OPENROUTER,
     }
 )
 _CODEX_MIRROR_VERSION = "helios-codex"
 _OPENROUTER_MIRROR_VERSION = "helios-openrouter"
+_GEMINI_MIRROR_VERSION = "helios-gemini"
 _CLAUDE_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
 
 
@@ -157,6 +159,8 @@ def _provider_from_transcript(
                     providers.add(model_catalog.PROVIDER_OPENAI)
                 elif version == _OPENROUTER_MIRROR_VERSION:
                     providers.add(model_catalog.PROVIDER_OPENROUTER)
+                elif version == _GEMINI_MIRROR_VERSION:
+                    providers.add(model_catalog.PROVIDER_GOOGLE)
                 elif (
                     isinstance(version, str)
                     and _CLAUDE_VERSION_RE.fullmatch(version.strip()) is not None
@@ -266,6 +270,8 @@ def chip_style(resolution: ProviderResolution | None) -> tuple[str, str, str]:
     if resolution.known:
         if resolution.provider == model_catalog.PROVIDER_OPENAI:
             return ("GPT", "helios-provider-gpt", "GPT (OpenAI) session")
+        if resolution.provider == model_catalog.PROVIDER_GOOGLE:
+            return ("Gemini", "helios-provider-gemini", "Gemini (Google) session")
         if resolution.provider == model_catalog.PROVIDER_OPENROUTER:
             return ("OR", "helios-provider-openrouter", "OpenRouter session")
         if resolution.provider == model_catalog.PROVIDER_ANTHROPIC:
@@ -297,6 +303,10 @@ def provider_for(session_id: str) -> str:
 
 def is_openai(session_id: str) -> bool:
     return provider_for(session_id) == model_catalog.PROVIDER_OPENAI
+
+
+def is_google(session_id: str) -> bool:
+    return provider_for(session_id) == model_catalog.PROVIDER_GOOGLE
 
 
 def is_openrouter(session_id: str) -> bool:

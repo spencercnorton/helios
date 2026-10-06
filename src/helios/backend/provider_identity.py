@@ -29,6 +29,7 @@ __all__ = [
     "ANTHROPIC_NATIVE",
     "CredentialOwner",
     "DEFAULT_PROVIDER_REGISTRY",
+    "GOOGLE_NATIVE",
     "IdentityValidationError",
     "LOCAL_WORKER",
     "ModelRef",
@@ -36,6 +37,7 @@ __all__ = [
     "OPENAI_NATIVE",
     "OPENROUTER_GATEWAY",
     "PROVIDER_ANTHROPIC",
+    "PROVIDER_GOOGLE",
     "PROVIDER_LOCAL",
     "PROVIDER_OPENAI",
     "PROVIDER_OPENROUTER",
@@ -51,6 +53,7 @@ SCHEMA_VERSION = 1
 
 PROVIDER_ANTHROPIC = "anthropic"
 PROVIDER_OPENAI = "openai"
+PROVIDER_GOOGLE = "google"
 PROVIDER_OPENROUTER = "openrouter"
 PROVIDER_LOCAL = "local"
 
@@ -694,6 +697,20 @@ OPENAI_NATIVE = ProviderDescriptor(
     supports_delegated_worker=False,
 )
 
+GOOGLE_NATIVE = ProviderDescriptor(
+    provider_id=PROVIDER_GOOGLE,
+    display_name="Gemini",
+    runtime_kind=RuntimeKind.NATIVE,
+    credential_owner=CredentialOwner.NATIVE_RUNTIME,
+    catalog_source="gemini-binary",
+    driver_factory_key="gemini-cli",
+    capability_discovery_key="gemini-binary",
+    transcript_kind="helios-gemini-jsonl",
+    native_binding_kind=NativeBindingKind.SESSION,
+    supports_primary_driver=True,
+    supports_delegated_worker=False,
+)
+
 OPENROUTER_GATEWAY = ProviderDescriptor(
     provider_id=PROVIDER_OPENROUTER,
     display_name="OpenRouter",
@@ -726,6 +743,7 @@ DEFAULT_PROVIDER_REGISTRY = ProviderRegistry(
     (
         ANTHROPIC_NATIVE,
         OPENAI_NATIVE,
+        GOOGLE_NATIVE,
         OPENROUTER_GATEWAY,
         LOCAL_WORKER,
     )

@@ -394,16 +394,13 @@ class ChatToolbar(Gtk.Box):
             (e.label for e in self._choices if e.id == alias), alias or "Default"
         )
         self._model_label.set_label(label)
-        # The picker lists one provider at a time — the one the System toggle
-        # is on, which is by construction the provider of the selected model
-        # (MainWindow._apply_model_choice keeps the two in lockstep). Showing
-        # OpenAI and OpenRouter rows under a Claude session was never a
-        # reachable choice; picking one silently switched providers.
+        # The unified picker lists all available models grouped by provider.
+        # Switching models updates the current provider filter for permissions
+        # and execution controls.
         provider = model_catalog.provider_for(alias)
         if provider != self._provider_filter:
             self._provider_filter = provider
-            self._build_model_popover()
-            # Provider-scoped permission rows follow the same toggle.
+            # Provider-scoped permission rows follow the selected model's provider.
             self._refresh_permission_rows()
             self._refresh_execution_summary()
 
@@ -1416,7 +1413,7 @@ class ChatToolbar(Gtk.Box):
         # Counted over the visible provider only — a big OpenRouter catalog
         # used to grow a search box on the Claude list too.
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        if len(self._provider_pool()) > _MODEL_SEARCH_THRESHOLD:
+        if len(self._choices) > _MODEL_SEARCH_THRESHOLD:
             search = Gtk.SearchEntry()
             search.set_placeholder_text("Filter models…")
             search.set_margin_top(6)
@@ -1435,30 +1432,27 @@ class ChatToolbar(Gtk.Box):
         popover.set_child(outer)
         self._model_btn.set_popover(popover)
 
-    def _provider_pool(self) -> list[ModelEntry]:
-        """The choices belonging to the provider the System toggle is on."""
-        return [
-            e
-            for e in self._choices
-            if getattr(e, "provider", model_catalog.PROVIDER_ANTHROPIC)
-            == self._provider_filter
-        ]
+    def _provider_pool(self, provider: str | None = None) -> list[ModelEntry]:
+        """The choices belonging to a provider (or _provider_filter if omitted)."""
+        target_provider = provider or getattr(self, "_provider_filter", None)
+        if target_provider:
+            return [
+                e
+                for e in self._choices
+                if getattr(e, "provider", model_catalog.PROVIDER_ANTHROPIC)
+                == target_provider
+            ]
+        return list(self._choices)
 
     def _split_by_currency(
-        self, pool: list[ModelEntry]
+        self, pool: list[ModelEntry], provider: str | None = None
     ) -> tuple[list[ModelEntry], list[ModelEntry]]:
-        """Split into "the ones you actually pick" and "everything older".
-
-        Claude publishes family aliases (`opus`, `fable`, `sonnet`) that always
-        resolve to the newest release — those are the whole first tier, and the
-        dated/pinned ids behind them are history. OpenRouter's tier is whatever
-        Settings → Providers selected. OpenAI's catalog arrives pre-curated and
-        short, so it only folds when it is unexpectedly long.
-        """
-        if self._provider_filter == model_catalog.PROVIDER_ANTHROPIC:
+        """Split into "the ones you actually pick" and "everything older"."""
+        target_provider = provider or getattr(self, "_provider_filter", model_catalog.PROVIDER_ANTHROPIC)
+        if target_provider == model_catalog.PROVIDER_ANTHROPIC:
             current = [e for e in pool if e.group in _ANTHROPIC_CURRENT_GROUPS]
             older = [e for e in pool if e.group not in _ANTHROPIC_CURRENT_GROUPS]
-        elif self._provider_filter == model_catalog.PROVIDER_OPENROUTER:
+        elif target_provider == model_catalog.PROVIDER_OPENROUTER:
             chosen = set(ui_state.store().get(ui_state.OPENROUTER_PICKER_KEY, []) or [])
             current = [e for e in pool if e.id in chosen]
             older = [e for e in pool if e.id not in chosen]
@@ -1479,41 +1473,83 @@ class ChatToolbar(Gtk.Box):
             child = nxt
 
         needle = query.strip().lower()
-        pool = [
-            e for e in self._provider_pool()
-            if not needle
-            or needle in e.id.lower()
-            or needle in e.label.lower()
-            or needle in (e.group or "").lower()
-        ]
-        if not pool:
-            empty = Gtk.Label(label="No models match", xalign=0)
-            empty.add_css_class("dim-label")
-            empty.set_margin_start(10)
-            empty.set_margin_top(8)
-            empty.set_margin_bottom(8)
-            box.append(empty)
-            return
-
         if needle:
-            # Searching means the user knows what they want; tiering it would
-            # hide half the hits behind a disclosure.
+            pool = [
+                e for e in self._choices
+                if needle in e.id.lower()
+                or needle in e.label.lower()
+                or needle in (e.group or "").lower()
+                or needle in getattr(e, "provider", "").lower()
+            ]
+            if not pool:
+                empty = Gtk.Label(label="No models match", xalign=0)
+                empty.add_css_class("dim-label")
+                empty.set_margin_start(10)
+                empty.set_margin_top(8)
+                empty.set_margin_bottom(8)
+                box.append(empty)
+                return
             self._append_model_rows(box, popover, pool)
             return
 
-        current, older = self._split_by_currency(pool)
-        self._append_model_rows(box, popover, current)
-        if older:
-            expander = Gtk.Expander()
-            expander.set_label(f"Older models ({len(older)})")
-            expander.add_css_class("helios-model-older")
-            expander.set_margin_start(10)
-            expander.set_margin_top(6)
-            inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
-            inner.set_margin_top(4)
-            self._append_model_rows(inner, popover, older)
-            expander.set_child(inner)
-            box.append(expander)
+        provider_order = [
+            model_catalog.PROVIDER_ANTHROPIC,
+            model_catalog.PROVIDER_OPENAI,
+            model_catalog.PROVIDER_GOOGLE,
+            model_catalog.PROVIDER_OPENROUTER,
+        ]
+        provider_titles = {
+            model_catalog.PROVIDER_ANTHROPIC: "Claude (Anthropic)",
+            model_catalog.PROVIDER_OPENAI: "OpenAI (Codex)",
+            model_catalog.PROVIDER_GOOGLE: "Google (Gemini)",
+            model_catalog.PROVIDER_OPENROUTER: "OpenRouter",
+        }
+
+        seen_providers = set(provider_order)
+        for e in self._choices:
+            p = getattr(e, "provider", model_catalog.PROVIDER_ANTHROPIC)
+            if p not in seen_providers:
+                provider_order.append(p)
+                seen_providers.add(p)
+
+        first_section = True
+        for p in provider_order:
+            p_entries = [
+                e for e in self._choices
+                if getattr(e, "provider", model_catalog.PROVIDER_ANTHROPIC) == p
+            ]
+            if not p_entries:
+                continue
+
+            if first_section:
+                first_section = False
+            else:
+                sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+                sep.set_margin_top(6)
+                sep.set_margin_bottom(4)
+                box.append(sep)
+
+            section_header = Gtk.Label(label=provider_titles.get(p, p.capitalize()), xalign=0)
+            section_header.add_css_class("heading")
+            section_header.add_css_class("dim-label")
+            section_header.set_margin_start(10)
+            section_header.set_margin_top(4)
+            section_header.set_margin_bottom(4)
+            box.append(section_header)
+
+            current, older = self._split_by_currency(p_entries, provider=p)
+            self._append_model_rows(box, popover, current)
+            if older:
+                expander = Gtk.Expander()
+                expander.set_label(f"Older models ({len(older)})")
+                expander.add_css_class("helios-model-older")
+                expander.set_margin_start(10)
+                expander.set_margin_top(4)
+                inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
+                inner.set_margin_top(2)
+                self._append_model_rows(inner, popover, older)
+                expander.set_child(inner)
+                box.append(expander)
 
     def _append_model_rows(self, box, popover, entries: list[ModelEntry]) -> None:
         last_group = None
@@ -2040,6 +2076,10 @@ _LIMITS_EMPTY: dict[str, str] = {
         "Codex reports usage when the App Server connects. Nothing yet means "
         "the session has not started or you are signed out."
     ),
+    model_catalog.PROVIDER_GOOGLE: (
+        "Gemini reports usage on the first response of a session — "
+        "send a message to populate."
+    ),
     model_catalog.PROVIDER_OPENROUTER: (
         "OpenRouter reports account credit rather than a rolling window. Add "
         "a key in Settings → Providers to see it."
@@ -2406,6 +2446,12 @@ class _ContextPopover(Gtk.Popover):
                 )
                 self._usage_link.set_uri("https://chatgpt.com/codex")
                 self._usage_link.set_label("Open Codex in browser ↗")
+            elif provider == model_catalog.PROVIDER_GOOGLE:
+                self._limits_title.set_tooltip_text(
+                    "Usage reported by Google Gemini for your subscription account."
+                )
+                self._usage_link.set_uri("https://gemini.google.com")
+                self._usage_link.set_label("Open Gemini in browser ↗")
             else:
                 self._limits_title.set_tooltip_text(
                     "Live limits reported by Claude for the signed-in Anthropic account."

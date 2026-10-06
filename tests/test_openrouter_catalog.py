@@ -64,22 +64,22 @@ class TestContextWindow:
 class TestBuildEntries:
     def test_groups_by_vendor(self):
         rows = [
-            {"id": "google/gemini", "name": "Google: Gemini", "context_length": 400000},
+            {"id": "moonshotai/kimi", "name": "Moonshotai: Kimi", "context_length": 400000},
             {"id": "qwen/qwen3", "name": "Qwen: Qwen3", "context_length": 200000},
             {"id": "deepseek/deepseek-chat", "name": "DeepSeek: DeepSeek Chat", "context_length": 64000},
         ]
         entries = oc.build_entries(rows)
-        assert [e.group for e in entries] == ["Google", "DeepSeek", "Qwen"]
+        assert [e.group for e in entries] == ["DeepSeek", "Moonshot AI", "Qwen"]
 
     def test_strips_vendor_prefix_from_label(self):
         rows = [{
-            "id": "google/gemini",
-            "name": "Google: Gemini",
-            "context_length": 400000,
+            "id": "deepseek/deepseek-chat",
+            "name": "DeepSeek: DeepSeek Chat",
+            "context_length": 64000,
             "supported_parameters": ["tools", "tool_choice"],
         }]
         entries = oc.build_entries(rows)
-        assert entries[0].label == "Gemini"
+        assert entries[0].label == "DeepSeek Chat"
 
     def test_drops_invalid_rows(self):
         rows = [
@@ -100,17 +100,21 @@ class TestBuildEntries:
             {"id": "anthropic/claude", "name": "Claude", "context_length": 200},
             {"id": "openai/gpt", "name": "GPT", "context_length": 300},
             {"id": "google/gemini", "name": "Gemini", "context_length": 400},
+            {"id": "deepseek/deepseek-chat", "name": "DeepSeek", "context_length": 500},
         ]
         entries = oc.build_entries(rows)
         ids = [e.id for e in entries]
-        assert ids == ["google/gemini", "zzz/last"]
+        assert ids == ["deepseek/deepseek-chat", "zzz/last"]
 
     def test_provider_set_on_entries(self):
-        rows = [{"id": "google/gemini", "name": "Gemini", "context_length": 400000}]
+        rows = [{"id": "deepseek/deepseek-chat", "name": "DeepSeek Chat", "context_length": 64000}]
         entries = oc.build_entries(rows)
         assert entries[0].provider == mc.PROVIDER_OPENROUTER
 
-    @pytest.mark.parametrize("vendor", ["openai", "anthropic", "OpenAI", "Anthropic"])
+    @pytest.mark.parametrize(
+        "vendor",
+        ["openai", "anthropic", "google", "gemini", "OpenAI", "Anthropic", "Google", "Gemini"],
+    )
     def test_native_vendors_are_excluded_including_open_models(self, vendor):
         rows = [
             {"id": f"{vendor}/model", "context_length": 200000},

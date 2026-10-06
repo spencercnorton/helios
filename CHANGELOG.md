@@ -4,6 +4,18 @@ All notable changes to Helios are documented here. Each release is a
 `vX.Y.Z` tag on `main`; its GitHub Release carries the `.deb`, the tagged
 source (`source.tar.gz`) and `SHA256SUMS.txt`.
 
+## 0.101.0 — 2026-10-06
+
+### Added
+
+- Native Google subscription support via Gemini CLI / Antigravity (`agy` / `gemini`).
+- Unified session model dropdown grouped by provider with direct subscription routing.
+
+### Changed
+
+- Removed the segmented Claude / GPT / OpenRouter provider toggle from the main header bar in favor of per-session model selection.
+- OpenRouter catalog strictly excludes models from native subscription providers (Anthropic, OpenAI, Google).
+
 ## 0.100.0 — 2026-10-06
 
 ### Changed
