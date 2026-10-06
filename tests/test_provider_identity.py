@@ -10,6 +10,7 @@ from helios.backend import model_catalog
 from helios.backend.provider_identity import (
     ANTHROPIC_NATIVE,
     DEFAULT_PROVIDER_REGISTRY,
+    GOOGLE_NATIVE,
     LOCAL_WORKER,
     OPENAI_NATIVE,
     OPENROUTER_GATEWAY,
@@ -44,7 +45,10 @@ def _model_ref(**overrides) -> ModelRef:
 def test_builtin_registry_has_native_gateway_and_local_identities():
     assert ANTHROPIC_NATIVE.provider_id == model_catalog.PROVIDER_ANTHROPIC
     assert OPENAI_NATIVE.provider_id == model_catalog.PROVIDER_OPENAI
+    assert GOOGLE_NATIVE.provider_id == model_catalog.PROVIDER_GOOGLE
     assert ANTHROPIC_NATIVE.runtime_kind is RuntimeKind.NATIVE
+    assert GOOGLE_NATIVE.runtime_kind is RuntimeKind.NATIVE
+    assert GOOGLE_NATIVE.native_binding_kind is NativeBindingKind.SESSION
     assert OPENAI_NATIVE.native_binding_kind is NativeBindingKind.THREAD
     assert OPENROUTER_GATEWAY.runtime_kind is RuntimeKind.GATEWAY
     assert OPENROUTER_GATEWAY.credential_owner is CredentialOwner.HELIOS_SUPERVISOR
@@ -52,6 +56,7 @@ def test_builtin_registry_has_native_gateway_and_local_identities():
     assert LOCAL_WORKER.credential_owner is CredentialOwner.NONE
     assert [item.provider_id for item in DEFAULT_PROVIDER_REGISTRY.descriptors] == [
         "anthropic",
+        "google",
         "local",
         "openai",
         "openrouter",

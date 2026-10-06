@@ -296,6 +296,7 @@ def test_chip_style_never_claims_ownership_without_evidence():
     known = {
         "openai": ("GPT", "helios-provider-gpt"),
         "openrouter": ("OR", "helios-provider-openrouter"),
+        "google": ("Gemini", "helios-provider-gemini"),
         "anthropic": ("Claude", "helios-provider-claude"),
     }
     for provider, (label, css) in known.items():
@@ -346,3 +347,15 @@ def test_an_unrecognised_known_provider_never_claims_claude(monkeypatch) -> None
     assert (label, css) != ("Claude", "helios-provider-claude"), (
         "an unrecognised known provider claimed Anthropic ownership"
     )
+
+
+def test_google_transcript_and_helper(tmp_path):
+    providers.set_provider("gem-sess", "google")
+    assert providers.is_google("gem-sess") is True
+    assert providers.is_openai("gem-sess") is False
+    assert providers.is_openrouter("gem-sess") is False
+
+    path = _transcript(tmp_path, "gemini-session", "helios-gemini")
+    res = providers.resolve_provider("gemini-session", path, conversation_store=_Owners())
+    assert res.known is True
+    assert res.provider == "google"

@@ -172,8 +172,9 @@ class SettingsDialog(Adw.PreferencesDialog):
         self._reload_mcp()
         self._reload_codex_mcp()
         self._reload_codex()
+        self._reload_google()
+        self._reload_google_mcp()
         self._reload_router()
-        self._reload_openrouter()
         self._reload_openrouter()
 
     @staticmethod
@@ -195,6 +196,9 @@ class SettingsDialog(Adw.PreferencesDialog):
 
     def _initial_model_choices(self, selected_model: str) -> list[tuple[str, str]]:
         choices = self._entry_pairs(list(model_catalog.FALLBACK_ANTHROPIC))
+        google_entries, _ = model_catalog.google_entries()
+        if google_entries:
+            choices.extend(self._entry_pairs(google_entries))
         if (
             selected_model
             and model_catalog.provider_for(selected_model)
@@ -741,6 +745,76 @@ class SettingsDialog(Adw.PreferencesDialog):
         self._key_hint.add_css_class("dim-label")
         self._codex_group.add(self._key_hint)
 
+        self._google_group = Adw.PreferencesGroup()
+        self._google_group.set_title("Google · Gemini")
+        self._google_group.set_description(
+            "Helios drives the Google Antigravity / Gemini CLI (`agy` / `gemini`) "
+            "using your active Google subscription. Models feature 1M and 2M token context windows."
+        )
+        page.add(self._google_group)
+
+        refresh_google = Gtk.Button.new_from_icon_name("view-refresh-symbolic")
+        refresh_google.add_css_class("flat")
+        refresh_google.set_tooltip_text("Re-check Google subscription status")
+        refresh_google.set_valign(Gtk.Align.CENTER)
+        refresh_google.connect("clicked", lambda *_: self._reload_google())
+        self._google_group.set_header_suffix(refresh_google)
+
+        self._google_status_row = Adw.ActionRow()
+        self._google_status_row.set_title("Checking…")
+        self._google_icon = Gtk.Image.new_from_icon_name("content-loading-symbolic")
+        self._google_icon.add_css_class("dim-label")
+        self._google_status_row.add_prefix(self._google_icon)
+        self._google_group.add(self._google_status_row)
+
+        self._google_catalog_row = Adw.ActionRow()
+        self._google_catalog_row.set_title("Model catalog")
+        self._google_catalog_row.set_subtitle("Loading Google subscription models…")
+        google_cat_icon = Gtk.Image.new_from_icon_name("view-list-symbolic")
+        google_cat_icon.add_css_class("dim-label")
+        self._google_catalog_row.add_prefix(google_cat_icon)
+        self._google_group.add(self._google_catalog_row)
+
+    def _reload_google(self) -> None:
+        self._google_status_row.set_title("Checking…")
+        self._google_status_row.set_subtitle("")
+        self._set_google_icon("content-loading-symbolic", "dim-label")
+
+        def work():
+            from helios.backend import google_env
+            auth = google_env.fetch_auth_status()
+            models, status = model_catalog.google_entries(auth=auth)
+            return auth, models, status
+
+        def on_done(result):
+            if self._closed or isinstance(result, Exception):
+                return
+            auth, models, status = result
+            if auth.ok and auth.logged_in:
+                account = auth.email or "Google Subscriber"
+                self._google_status_row.set_title(f"Signed in as {account}")
+                self._google_status_row.set_subtitle(
+                    f"Plan: {auth.plan or 'Google Subscription'} · CLI: {auth.binary_path or 'agy'}"
+                )
+                self._set_google_icon("object-select-symbolic", "success")
+                self._google_catalog_row.set_subtitle(
+                    f"{len(models)} subscription models active ({', '.join(m.id for m in models[:3])}…)"
+                )
+            else:
+                self._google_status_row.set_title("Not signed in")
+                reason = auth.error or "Run `agy login` or `gemini login` in a terminal to authenticate."
+                self._google_status_row.set_subtitle(reason)
+                self._set_google_icon("dialog-warning-symbolic", "warning")
+                self._google_catalog_row.set_subtitle("Subscription required.")
+
+        self._run_async(work, on_done)
+
+    def _set_google_icon(self, icon_name: str, css: str) -> None:
+        self._google_icon.set_from_icon_name(icon_name)
+        for c in ("success", "warning", "error", "dim-label"):
+            self._google_icon.remove_css_class(c)
+        self._google_icon.add_css_class(css)
+
     def _reload_codex(self, *, force_models: bool = False) -> None:
         if self._codex_update_running:
             return
@@ -778,7 +852,8 @@ class SettingsDialog(Adw.PreferencesDialog):
             return
         auth, version, anthropic, models, status = result
         selectable_models = SettingsDialog._selectable_openai_models(models, status)
-        self._set_model_choices(self._entry_pairs(anthropic + selectable_models))
+        google, _ = model_catalog.google_entries()
+        self._set_model_choices(self._entry_pairs(anthropic + selectable_models + google))
         if not auth.ok and not auth.logged_in:
             self._codex_status_row.set_title("Codex CLI not available")
             self._codex_status_row.set_subtitle(auth.detail)
@@ -1258,6 +1333,20 @@ class SettingsDialog(Adw.PreferencesDialog):
         self._codex_mcp_group.set_header_suffix(refresh_codex_mcp)
         self._codex_mcp_rows: list[Gtk.Widget] = []
 
+        self._gemini_mcp_group = Adw.PreferencesGroup()
+        self._gemini_mcp_group.set_title("Gemini MCP servers")
+        self._gemini_mcp_group.set_description(
+            "External MCP tool servers available to Google Gemini (`~/.gemini/config/mcp_config.json`)."
+        )
+        page.add(self._gemini_mcp_group)
+        refresh_gemini_mcp = Gtk.Button.new_from_icon_name("view-refresh-symbolic")
+        refresh_gemini_mcp.add_css_class("flat")
+        refresh_gemini_mcp.set_tooltip_text("Reload Gemini MCP servers")
+        refresh_gemini_mcp.set_valign(Gtk.Align.CENTER)
+        refresh_gemini_mcp.connect("clicked", lambda *_: self._reload_google_mcp())
+        self._gemini_mcp_group.set_header_suffix(refresh_gemini_mcp)
+        self._gemini_mcp_rows: list[Gtk.Widget] = []
+
         # --- Built-in tools ----------------------------------------------
         self._builtin_group = Adw.PreferencesGroup()
         self._builtin_group.set_title("Built-in tools")
@@ -1606,6 +1695,43 @@ class SettingsDialog(Adw.PreferencesDialog):
         icon.add_css_class(css)
         row.add_suffix(icon)
         return row
+
+    def _reload_google_mcp(self) -> None:
+        for row in self._gemini_mcp_rows:
+            self._gemini_mcp_group.remove(row)
+        self._gemini_mcp_rows = []
+
+        def work():
+            from helios.backend import google_env
+            return google_env.list_mcp_servers()
+
+        def on_done(servers):
+            if self._closed or isinstance(servers, Exception):
+                return
+            for row in self._gemini_mcp_rows:
+                self._gemini_mcp_group.remove(row)
+            self._gemini_mcp_rows = []
+            if not servers:
+                row = Adw.ActionRow()
+                row.set_title("No Gemini MCP servers configured")
+                row.set_subtitle("Add servers to ~/.gemini/config/mcp_config.json.")
+                self._gemini_mcp_group.add(row)
+                self._gemini_mcp_rows.append(row)
+                return
+            for s in servers:
+                row = Adw.ActionRow()
+                row.set_title(str(s.get("name") or "MCP server"))
+                cmd = str(s.get("command") or "")
+                args = " ".join(str(a) for a in s.get("args") or [])
+                sub = f"{cmd} {args}".strip()
+                row.set_subtitle(sub or "Configured")
+                icon = Gtk.Image.new_from_icon_name("utilities-terminal-symbolic")
+                icon.add_css_class("dim-label")
+                row.add_prefix(icon)
+                self._gemini_mcp_group.add(row)
+                self._gemini_mcp_rows.append(row)
+
+        self._run_async(work, on_done)
 
     # ── account actions ──────────────────────────────────────────────────
 

@@ -65,12 +65,14 @@ KNOWN_FAMILIES: tuple[str, ...] = ("fable", "opus", "sonnet", "haiku")
 
 PROVIDER_ANTHROPIC = "anthropic"
 PROVIDER_OPENAI = "openai"
+PROVIDER_GOOGLE = "google"
 PROVIDER_OPENROUTER = "openrouter"
 
 #: User-facing provider names for toasts, scope chips, and notifications.
 PROVIDER_LABELS: dict[str, str] = {
     PROVIDER_ANTHROPIC: "Claude",
     PROVIDER_OPENAI: "GPT",
+    PROVIDER_GOOGLE: "Gemini",
     PROVIDER_OPENROUTER: "OpenRouter",
 }
 
@@ -552,32 +554,103 @@ def openai_workflow_modes() -> tuple[str, ...]:
     return _OPENAI_WORKFLOW_MODES
 
 
+# ── Google: Antigravity / Gemini subscription catalog ───────────────────────
+
+FALLBACK_GOOGLE_SUBSCRIPTION: tuple[str, ...] = (
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-3.6-flash",
+    "gemini-3.8-flash",
+)
+
+_GOOGLE_PROVIDER_RE = re.compile(r"^(gemini|agy)")
+
+
+def _google_label(mid: str) -> str:
+    labels = {
+        "gemini-2.5-pro": "Gemini 2.5 Pro (2M context)",
+        "gemini-2.5-flash": "Gemini 2.5 Flash (1M context)",
+        "gemini-3.6-flash": "Gemini 3.6 Flash (1M context)",
+        "gemini-3.8-flash": "Gemini 3.8 Flash (High Speed)",
+    }
+    if mid in labels:
+        return labels[mid]
+    if mid.startswith("gemini-"):
+        parts = mid[7:].split("-")
+        return "Gemini " + " ".join(p.capitalize() for p in parts)
+    return mid
+
+
+def build_google_entries(model_ids: list[str] | tuple[str, ...]) -> list[ModelEntry]:
+    entries: list[ModelEntry] = []
+    for mid in model_ids:
+        is_default = mid == "gemini-2.5-pro"
+        entries.append(
+            ModelEntry(
+                id=mid,
+                label=_google_label(mid),
+                group="Google · Recommended" if is_default else "Google",
+                provider=PROVIDER_GOOGLE,
+                description="Google subscription" if not is_default else "Google subscription · 2M context window",
+                is_default=is_default,
+            )
+        )
+    return entries
+
+
+def google_entries(*, force: bool = False, auth=None) -> tuple[list[ModelEntry], str]:
+    """Return Google subscription models and diagnostic source status."""
+    from helios.backend import google_env
+
+    del force
+    current_auth = auth if auth is not None else google_env.fetch_auth_status()
+    if not current_auth.ok or not current_auth.logged_in:
+        return [], "not-logged-in"
+
+    return build_google_entries(FALLBACK_GOOGLE_SUBSCRIPTION), "subscription"
+
+
+def preferred_google_model(entries: list[ModelEntry]) -> str:
+    """Best default for Google/Gemini: default entry, or first entry, or 'gemini-2.5-pro'."""
+    return next((entry.id for entry in entries if entry.is_default), entries[0].id if entries else "gemini-2.5-pro")
+
+
 # ── OpenRouter: fetched /models catalog ────────────────────────────────────
 
 # Last-known-good rows so the picker is never empty before the first fetch.
 # The live /models fetch replaces these within seconds on a networked host.
 FALLBACK_OPENROUTER: list[ModelEntry] = [
-    ModelEntry("google/gemini-2.5-pro", "Gemini 2.5 Pro", "Google", PROVIDER_OPENROUTER),
-    ModelEntry("moonshotai/kimi-k2", "Kimi K2", "Moonshotai", PROVIDER_OPENROUTER),
     ModelEntry("deepseek/deepseek-chat", "DeepSeek Chat", "Deepseek", PROVIDER_OPENROUTER),
+    ModelEntry("moonshotai/kimi-k2", "Kimi K2", "Moonshotai", PROVIDER_OPENROUTER),
+    ModelEntry("meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B", "Meta", PROVIDER_OPENROUTER),
 ]
+
+NATIVE_SUBSCRIPTION_VENDORS: frozenset[str] = frozenset(
+    {"anthropic", "openai", "google", "gemini"}
+)
 
 
 def openrouter_model_selectable(model_id: str) -> bool:
-    """Keep native Claude/GPT models out of OpenRouter's model choices.
+    """Keep native subscription models (Claude, OpenAI, Google) out of OpenRouter choices.
 
     Provider classification stays unchanged so existing OpenRouter histories
     retain their actual provider. This is a catalog/selection policy, not a
     migration of a conversation to another API or credential.
     """
     vendor, separator, name = str(model_id or "").strip().partition("/")
-    return bool(separator and vendor and name) and vendor.casefold() not in {
-        "anthropic", "openai",
-    }
+    if not (separator and vendor and name):
+        return False
+    vendor_key = vendor.casefold()
+    if vendor_key in NATIVE_SUBSCRIPTION_VENDORS:
+        return False
+    name_key = name.casefold()
+    if any(p in name_key for p in ("claude-", "gpt-4", "gpt-5", "gemini-")):
+        return False
+    return True
 
 
 def preferred_openrouter_model(entries: list[ModelEntry]) -> str:
-    """Best default for the OpenRouter header toggle: first eligible entry."""
+    """Best default for the OpenRouter selection: first eligible entry."""
     return next((entry.id for entry in entries if openrouter_model_selectable(entry.id)), "")
 
 
@@ -617,11 +690,14 @@ def provider_for(model_id: str) -> str:
     """Classify a model id.
 
     OpenRouter ids are always ``vendor/model`` — a slash never appears in a
-    native Anthropic or OpenAI id. Failing that, unmistakably OpenAI naming
-    wins; everything else is Anthropic."""
+    native Anthropic, OpenAI, or Google id. Failing that, unmistakably OpenAI naming
+    or Google naming wins; everything else is Anthropic.
+    """
     m = model_id or ""
     if "/" in m:
         return PROVIDER_OPENROUTER
+    if _GOOGLE_PROVIDER_RE.match(m):
+        return PROVIDER_GOOGLE
     if _OPENAI_PROVIDER_RE.match(m):
         return PROVIDER_OPENAI
     return PROVIDER_ANTHROPIC
@@ -661,6 +737,10 @@ def context_window_for(model_id: str, default_anthropic: str = "") -> int:
         from helios.backend.openrouter import catalog as or_catalog
 
         return or_catalog.context_length_for(m) or 200_000
+    if provider == PROVIDER_GOOGLE:
+        if "2.5-pro" in m:
+            return 2_000_000
+        return 1_000_000
     if provider == PROVIDER_OPENAI:
         for prefix, window in _OPENAI_WINDOWS:
             if m.startswith(prefix):
