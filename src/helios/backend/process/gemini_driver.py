@@ -21,8 +21,6 @@ from gi.repository import GLib, GObject
 from helios.backend.google_env import GoogleBinaryNotFound, find_google_binary
 from helios.backend.process.env_scrub import scrubbed_child_env
 from helios.backend.process.message_queue import (
-    PreparedPrompt,
-    RequiredPromptContextError,
     UserMessageQueueMixin,
 )
 from helios.backend.transcript import Turn
@@ -236,7 +234,8 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
             return False
 
         # Emit turn-appended for user turn
-        turn = UserTurn(text=text, timestamp=time.time())
+        turn = Turn(role="user")
+        turn.add("text", text)
         self.emit("turn-appended", turn)
         self.emit("delivery-confirmed")
         return True
