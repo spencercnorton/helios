@@ -90,12 +90,13 @@ from helios.backend.router_tools import (
     router_mcp_launcher_path,
 )
 from helios.backend.sensitive_text import REDACTED, scrub_sensitive
+from helios.backend.rate_limits import claude_rate_limit
 from helios.backend.process.streaming import (  # noqa: F401 — re-exported names
     Block as _Block,
     StreamingAssistant,
     terminal_cost_micro_usd,
 )
-from helios.backend.transcript import QUESTION_DISMISSED_MESSAGE
+from helios.backend.transcript import QUESTION_DISMISSED_MESSAGE, ToolUse
 from helios.log import get_logger
 
 _log = get_logger("driver")
@@ -394,6 +395,7 @@ class ClaudeCliDriver(UserMessageQueueMixin, GObject.Object):
         # inferred. Cleared when a new root turn begins, because the projection
         # is turn-scoped like the Codex one.
         self._agents: dict[str, dict] = {}
+        self._active_root_tools: dict[str, ToolUse] = {}
         # tool_use_ids whose terminal comes from `system/task_notification`
         # rather than the root tool_result (see `_note_task_record`).
         self._task_managed_actors: set[str] = set()
@@ -2067,6 +2069,7 @@ class ClaudeCliDriver(UserMessageQueueMixin, GObject.Object):
         """
         had_any = bool(self._agents)
         self._agents = {}
+        self._active_root_tools.clear()
         self._task_managed_actors = set()
         self._agents_root_turn_id = root_turn_id
         if had_any:
@@ -2111,6 +2114,41 @@ class ClaudeCliDriver(UserMessageQueueMixin, GObject.Object):
             return
         actor["status"] = "working"
         self.emit("agents-updated", copy.deepcopy(self._agents))
+
+    def _note_tool_progress(self, obj: dict) -> None:
+        """Use native tool progress only for a causally known, active tool.
+
+        Heartbeats also occur while waiting for approval; they prove liveness,
+        not execution. Child traffic updates only an existing child actor.
+        """
+        if not self._busy or obj.get("heartbeat"):
+            return
+        session_id = obj.get("session_id")
+        if session_id and session_id != self._session_id:
+            return
+        parent_id = obj.get("parent_tool_use_id")
+        if isinstance(parent_id, str) and parent_id:
+            self._note_child_progress(parent_id)
+            return
+        tool_id = obj.get("tool_use_id")
+        if not isinstance(tool_id, str):
+            return
+        tool = self._active_root_tools.get(tool_id)
+        if tool is None or obj.get("tool_name") != tool.name:
+            return
+        elapsed = obj.get("elapsed_time_seconds")
+        if isinstance(elapsed, bool) or not isinstance(elapsed, (int, float)):
+            return
+        try:
+            valid = math.isfinite(elapsed) and elapsed >= 0
+        except OverflowError:
+            return
+        if not valid:
+            return
+        self.emit("activity-updated", {
+            "category": "tool-progress", "tool": tool.name,
+            "input": tool.input, "elapsedSeconds": int(elapsed),
+        })
 
     #: Keep an actor's surfaced tail short enough for a dock detail row.
     _CHILD_SNIPPET_CHARS = 120
@@ -2757,9 +2795,12 @@ class ClaudeCliDriver(UserMessageQueueMixin, GObject.Object):
             # remaining system subtypes are informational
 
         elif rtype == "rate_limit_event":
-            info = obj.get("rate_limit_info") or {}
-            if isinstance(info, dict) and info.get("rateLimitType"):
+            info = claude_rate_limit(obj.get("rate_limit_info"))
+            if info is not None:
                 self.emit("rate-limit-updated", info)
+
+        elif rtype == "tool_progress":
+            self._note_tool_progress(obj)
 
         elif rtype == "control_request":
             # The CLI emits this when `--permission-prompt-tool stdio` is set
@@ -2816,6 +2857,9 @@ class ClaudeCliDriver(UserMessageQueueMixin, GObject.Object):
                     # so we'd post 3 separate bubbles for a single
                     # "thinking + tool_use + tool_use" response.
                     final_turn = self._streaming.to_turn()
+                    for tool in final_turn.tool_uses:
+                        if tool.id:
+                            self._active_root_tools[tool.id] = tool
                     if final_turn.has_content:
                         if self.execution_attempt_id and not (
                             self._record_execution_contribution(final_turn)
@@ -2880,6 +2924,8 @@ class ClaudeCliDriver(UserMessageQueueMixin, GObject.Object):
             if turn is not None and turn.has_content:
                 self.emit("turn-appended", turn)
             if turn is not None:
+                for result in turn.tool_results:
+                    self._active_root_tools.pop(result.tool_use_id, None)
                 # The root-level tool_result for a Task/Workflow is what
                 # unblocks the root model, so it is the arrival-guaranteed
                 # "done" signal.
@@ -2941,6 +2987,7 @@ class ClaudeCliDriver(UserMessageQueueMixin, GObject.Object):
             # assistant message preceded it (for example an early error).
             self._confirm_uncertain_delivery()
             self._busy = False
+            self._active_root_tools.clear()
             used, window = self._main_model_context(obj)
             if window > 0:
                 # modelUsage.contextWindow is the HARD model cap (1,000,000 on

@@ -437,6 +437,15 @@ def native_activity_state(payload: dict) -> tuple[str, str]:
 
     category = str(payload.get("category") or "tool")
 
+    if category == "tool-progress":
+        tool = str(payload.get("tool") or "")
+        inp = payload.get("input")
+        state, detail = _state_for_tool(tool, inp if isinstance(inp, dict) else {})
+        elapsed = payload.get("elapsedSeconds")
+        if isinstance(elapsed, int) and not isinstance(elapsed, bool) and elapsed >= 0:
+            detail = " · ".join(p for p in (_shorten(detail, 100), f"{_format_elapsed(elapsed)} elapsed") if p)
+        return state, detail
+
     # ── Claude provider-truth phases ──────────────────────────
     if category == "retry":
         return STATE_RETRYING, _retry_detail(payload)

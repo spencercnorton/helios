@@ -17,6 +17,7 @@ from helios.backend.project_perms import (
     effective_execution_mode,
 )
 from helios.backend.sensitive_text import scrub_sensitive
+from helios.backend.rate_limits import measured_percent
 from helios.backend.workflow_modes import (
     PLAN_WORKFLOW_MODE,
     canonical_workflow_mode,
@@ -478,6 +479,9 @@ def rate_limit_rows(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for bucket in ("primary", "secondary"):
         window = snapshot.get(bucket)
+        if bucket in snapshot and window is None:
+            rows.append({"provider": "openai", "rateLimitType": f"{limit_id}_{bucket}", "removed": True})
+            continue
         if not isinstance(window, dict):
             continue
         span = humanize_window_mins(window.get("windowDurationMins"))
@@ -491,7 +495,7 @@ def rate_limit_rows(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
                 "rateLimitType": f"{limit_id}_{bucket}",
                 "label": label or f"Codex {bucket} window",
                 "status": "blocked" if reached else "allowed",
-                "usedPercent": max(0, min(100, int(window.get("usedPercent") or 0))),
+                "usedPercent": measured_percent(window.get("usedPercent")),
                 "windowDurationMins": window.get("windowDurationMins"),
                 "resetsAt": window.get("resetsAt"),
             }

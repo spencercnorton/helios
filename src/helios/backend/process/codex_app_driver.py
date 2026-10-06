@@ -243,6 +243,7 @@ class CodexAppServerDriver(CodexCliDriver):
         # build: an unhandled notification method.
         "capability-drift": (GObject.SignalFlags.RUN_FIRST, None, (object,)),
         "provider-notice": (GObject.SignalFlags.RUN_FIRST, None, (object,)),
+        "hook-notice": (GObject.SignalFlags.RUN_FIRST, None, (object,)),
         "thread-forked": (GObject.SignalFlags.RUN_FIRST, None, (object,)),
         "context-compacted": (GObject.SignalFlags.RUN_FIRST, None, (object,)),
         "turn-status-updated": (GObject.SignalFlags.RUN_FIRST, None, (object,)),
@@ -369,7 +370,6 @@ class CodexAppServerDriver(CodexCliDriver):
         self._mcp_by_name: dict[str, dict[str, Any]] = {}
         self._agents: dict[str, dict[str, Any]] = {}
         self._agents_turn_id = ""
-        self._rate_snapshots: dict[str, dict[str, Any]] = {}
         # App Server reports a cumulative counter per thread.  A native
         # session can own child threads, so retain the latest counter for each
         # member and enforce the budget against the whole thread family.
@@ -3111,6 +3111,8 @@ class CodexAppServerDriver(CodexCliDriver):
                 self.emit("usage-updated", used, window)
         elif kind == app_events.ACT_RATE_LIMIT_UPDATED:
             self._emit_rate_limit_snapshot(payload.get("rateLimits") or {})
+        elif kind == app_events.ACT_HOOK_NOTICE:
+            self.emit("hook-notice", payload)
         elif kind == app_events.ACT_TURN_STATUS:
             if _is_session_budget_exceeded(payload):
                 # App Server can enforce its native tokenBudget before a final
@@ -3776,20 +3778,24 @@ class CodexAppServerDriver(CodexCliDriver):
             return False
         buckets = result.get("rateLimitsByLimitId")
         if isinstance(buckets, dict) and buckets:
-            for snapshot in buckets.values():
+            for limit_id, snapshot in buckets.items():
                 if isinstance(snapshot, dict):
-                    self._emit_rate_limit_snapshot(snapshot)
+                    self._consume_rate_limit_snapshot({**snapshot, "limitId": snapshot.get("limitId") or limit_id})
         elif isinstance(result.get("rateLimits"), dict):
-            self._emit_rate_limit_snapshot(result["rateLimits"])
+            self._consume_rate_limit_snapshot(result["rateLimits"])
         return False
+
+    def _consume_rate_limit_snapshot(self, snapshot: dict[str, Any]) -> None:
+        # Initial reads and notifications share one bucket-scoped cache.
+        for action in self._app_acc.feed_notification(
+            app_events.METHOD_ACCOUNT_RATE_LIMITS, {"rateLimits": snapshot}
+        ):
+            self._dispatch_app_action(action)
 
     def _emit_rate_limit_snapshot(self, snapshot: dict[str, Any]) -> None:
         if not isinstance(snapshot, dict):
             return
-        limit_id = str(snapshot.get("limitId") or "codex")
-        merged = _merge_non_null(self._rate_snapshots.get(limit_id, {}), snapshot)
-        self._rate_snapshots[limit_id] = merged
-        for row in rate_limit_rows(merged):
+        for row in rate_limit_rows(snapshot):
             self.emit("rate-limit-updated", row)
 
     def _load_native_mcp_state(self) -> None:

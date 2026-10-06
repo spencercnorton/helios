@@ -85,3 +85,29 @@ def test_rate_limit_label_prefers_the_row_the_provider_labelled() -> None:
     assert rate_limit_label("five_hour", {"usedPercent": 40}) == "5-hour usage"
     # Nothing known either way still degrades to the raw key, not a crash.
     assert rate_limit_label("mystery", None) == "mystery"
+
+
+def test_current_claude_quota_names_are_readable():
+    from helios.widgets.chat_toolbar import rate_limit_label
+    assert rate_limit_label("seven_day") == "Weekly usage"
+    assert rate_limit_label("seven_day_sonnet") == "Weekly (Sonnet only)"
+    assert rate_limit_label("seven_day_opus") == "Weekly (Opus only)"
+    assert rate_limit_label("overage") == "Extra usage"
+
+
+def test_quota_popover_skips_duplicate_rebuilds_and_removes_obsolete_windows():
+    from gi.repository import Gtk
+
+    if not Gtk.init_check():
+        pytest.skip("GTK display is unavailable")
+    from helios.widgets.chat_toolbar import _ContextPopover
+    popover = _ContextPopover()
+    rebuilds = []
+    popover._rebuild_limits_rows = lambda: rebuilds.append(True)
+    row = {"provider": "openai", "rateLimitType": "codex_secondary", "usedPercent": 30}
+    popover.update_rate_limit(row)
+    popover.update_rate_limit(dict(row))
+    assert rebuilds == [True]
+    popover.update_rate_limit({"provider": "openai", "rateLimitType": "codex_secondary", "removed": True})
+    assert rebuilds == [True, True]
+    assert popover._rate_limits == {}

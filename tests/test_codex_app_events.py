@@ -1278,6 +1278,58 @@ def test_rate_limit_updates_merge_sparse_non_null_values():
     assert second["rateLimitReachedType"] == "rate_limit_reached"
 
 
+def test_rate_limit_buckets_never_inherit_another_buckets_window_or_rejection():
+    acc = cae.CodexAppEventAccumulator()
+    def update(**snapshot):
+        return acc.feed(notification(cae.METHOD_ACCOUNT_RATE_LIMITS, rateLimits=snapshot))[0].payload["rateLimits"]
+    update(limitId="codex", limitName="Standard", primary={"usedPercent": 100},
+           secondary={"usedPercent": 80}, rateLimitReachedType="rate_limit_reached")
+    other = update(limitId="fast", primary={"usedPercent": 10})
+    assert "secondary" not in other
+    assert "limitName" not in other
+    assert "rateLimitReachedType" not in other
+    recovered = update(limitId="codex", primary={"usedPercent": 2}, rateLimitReachedType=None)
+    assert recovered["secondary"]["usedPercent"] == 80
+    assert recovered["rateLimitReachedType"] is None
+    assert update(limitId="fast", primary={"resetsAt": 777})["primary"] == {"usedPercent": 10, "resetsAt": 777}
+    # A legacy snapshot without an id is the default bucket, never whichever
+    # metered model happened to notify last.
+    assert update(primary={"usedPercent": 5})["limitId"] == "codex"
+
+
+def test_rate_limit_window_removal_is_distinct_from_sparse_omission():
+    acc = cae.CodexAppEventAccumulator()
+    for snapshot in [{"limitId": "codex", "primary": {"usedPercent": 20}, "secondary": {"usedPercent": 30}},
+                     {"limitId": "codex", "primary": {"usedPercent": 25}}]:
+        acc.feed(notification(cae.METHOD_ACCOUNT_RATE_LIMITS, rateLimits=snapshot))
+    assert acc.rate_limits["secondary"] == {"usedPercent": 30}
+    action = acc.feed(notification(cae.METHOD_ACCOUNT_RATE_LIMITS, rateLimits={"limitId": "codex", "secondary": None}))[0]
+    assert action.payload["rateLimits"]["secondary"] is None
+    action.payload["rateLimits"]["primary"]["usedPercent"] = 999
+    assert acc.rate_limits["primary"]["usedPercent"] == 25
+
+
+def test_codex_hook_notice_is_scoped_deduplicated_and_contains_no_context():
+    acc = cae.CodexAppEventAccumulator()
+    start(acc)
+    payload = {"threadId": THREAD_ID, "turnId": TURN_ID, "run": {
+        "id": "hook-1", "eventName": "preToolUse", "status": "blocked",
+        "sourcePath": "/private/settings.json", "entries": [
+            {"kind": "context", "text": "PRIVATE CONTEXT"},
+            {"kind": "feedback", "text": "PRIVATE FEEDBACK"},
+            {"kind": "stop", "text": "Choose an approved directory."},
+        ]}}
+    assert acc.feed_notification(cae.METHOD_HOOK_COMPLETED, {**payload, "threadId": "other"}) == []
+    assert acc.feed_notification(cae.METHOD_HOOK_COMPLETED, {**payload, "turnId": "old-turn"}) == []
+    assert acc.feed_notification(cae.METHOD_HOOK_STARTED, payload) == []
+    actions = acc.feed_notification(cae.METHOD_HOOK_COMPLETED, payload)
+    assert actions[0].kind == cae.ACT_HOOK_NOTICE
+    assert actions[0].payload.detail == "Choose an approved directory."
+    assert "PRIVATE" not in repr(actions)
+    assert "/private" not in repr(actions)
+    assert acc.feed_notification(cae.METHOD_HOOK_COMPLETED, payload) == []
+
+
 def test_interrupted_and_failed_turns_emit_status_result_and_errors():
     interrupted = cae.CodexAppEventAccumulator()
     start(interrupted)

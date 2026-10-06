@@ -2011,6 +2011,11 @@ _RATE_LIMIT_LABELS = {
     "5h": "5-hour usage",
     "weekly": "Weekly usage",
     "week": "Weekly usage",
+    "seven_day": "Weekly usage",
+    "seven_day_sonnet": "Weekly (Sonnet only)",
+    "seven_day_opus": "Weekly (Opus only)",
+    "seven_day_overage_included": "Weekly usage (including extra usage)",
+    "overage": "Extra usage",
     "sonnet_weekly": "Weekly (Sonnet only)",
     "opus_weekly": "Weekly (Opus only)",
     "haiku_weekly": "Weekly (Haiku only)",
@@ -2418,7 +2423,13 @@ class _ContextPopover(Gtk.Popover):
         provider = str(info.get("provider") or "")
         if provider and self._rate_provider and provider != self._rate_provider:
             return
-        self._rate_limits[rl_type] = info
+        if info.get("removed"):
+            if self._rate_limits.pop(rl_type, None) is None:
+                return
+        else:
+            if self._rate_limits.get(rl_type) == info:
+                return
+            self._rate_limits[rl_type] = dict(info)
         self._rebuild_limits_rows()
 
     # ── Internals ────────────────────────────────────────────────
@@ -2437,7 +2448,7 @@ class _ContextPopover(Gtk.Popover):
 
         # Ordered list: known limit types first, others after.
         ordered_keys = list(self._rate_limits.keys())
-        priority = {k: i for i, k in enumerate(("five_hour", "fivehour", "weekly", "sonnet_weekly", "opus_weekly", "haiku_weekly"))}
+        priority = {k: i for i, k in enumerate(("five_hour", "fivehour", "weekly", "seven_day", "sonnet_weekly", "seven_day_sonnet", "opus_weekly", "seven_day_opus", "haiku_weekly"))}
         ordered_keys.sort(key=lambda k: priority.get(k, 99))
 
         for k in ordered_keys:

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 
-from helios.backend.hook_events import HookNotice, summarize_hook
+from helios.backend.hook_events import HookNotice, summarize_hook, summarize_codex_hook
 
 
 def _response(**overrides) -> dict:
@@ -25,6 +25,34 @@ def _response(**overrides) -> dict:
     }
     payload.update(overrides)
     return payload
+
+
+def test_codex_success_and_context_entries_do_not_make_notices():
+    assert summarize_codex_hook({"run": {"status": "completed", "entries": [
+        {"kind": "context", "text": "Private application context"},
+        {"kind": "feedback", "text": "Private model feedback"},
+    ]}}) is None
+    assert summarize_codex_hook({"run": []}) is None
+
+
+def test_codex_blocked_hook_uses_a_clean_label_and_scrubbed_bounded_detail():
+    notice = summarize_codex_hook({"run": {
+        "eventName": "preToolUse", "status": "blocked", "entries": [
+            {"kind": "context", "text": "NOT USER FACING"},
+            {"kind": "stop", "text": "token = sk-test-secret-hook-value-0123456789" + " x" * 1000},
+        ]}})
+    assert notice.title == "Codex hook · Before tool use · blocked"
+    assert notice.severity == "warning"
+    assert "sk-test-secret-hook-value-0123456789" not in notice.detail
+    assert "NOT USER FACING" not in notice.detail
+    assert len(notice.detail) <= 1000
+
+
+def test_codex_failed_hook_with_no_entries_uses_status_message():
+    notice = summarize_codex_hook({"run": {
+        "eventName": "sessionStart", "status": "failed", "statusMessage": "Hook timed out"
+    }})
+    assert notice == HookNotice("error", "Codex hook · Session start · failed", "Hook timed out")
 
 
 # ── progress subtypes never surface ───────────────────────────────────────

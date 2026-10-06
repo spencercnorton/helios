@@ -4,6 +4,19 @@ All notable changes to Helios are documented here. Each release is a
 `vX.Y.Z` tag on `main`; its GitHub Release carries the `.deb`, the tagged
 source (`source.tar.gz`) and `SHA256SUMS.txt`.
 
+## 0.100.0 — 2026-10-06
+
+### Changed
+
+- Claude usage limits now show native percentages and readable weekly/extra-usage labels; active tool progress shows the CLI's elapsed time.
+- Codex hook failures and blocking decisions appear as concise transcript notices, with private context excluded.
+- The Codex protocol compatibility manifest now targets CLI 0.160.1.
+
+### Fixed
+
+- Codex quota buckets no longer inherit another bucket's windows or blocked status, and recovered limits and removed windows update correctly.
+- Unavailable quota percentages stay unknown, and unchanged quota rows avoid redundant widget rebuilding.
+
 ## 0.99.8 — 2026-10-04
 
 ### Fixed

@@ -16,6 +16,14 @@ from helios.backend.sensitive_text import scrub_sensitive
 
 _BLOCKING = {"block", "deny"}
 _ASKING = {"ask"}
+_CODEX_HOOK_LABELS = {
+    "preToolUse": "Before tool use", "permissionRequest": "Permission check",
+    "postToolUse": "After tool use", "preCompact": "Before compaction",
+    "postCompact": "After compaction", "sessionStart": "Session start",
+    "sessionEnd": "Session end", "userPromptSubmit": "User message",
+    "subagentStart": "Agent start", "subagentStop": "Agent finish",
+    "stop": "Turn finish", "interrupt": "Interrupt",
+}
 
 
 @dataclass
@@ -79,3 +87,29 @@ def _clean(text: object) -> str:
     scrubber every other provider-derived string goes through."""
     cleaned, _found = scrub_sensitive(text or "")
     return cleaned
+
+
+def summarize_codex_hook(payload: dict) -> HookNotice | None:
+    """Project only actionable App Server hook output, never context entries."""
+    run = payload.get("run")
+    if not isinstance(run, dict):
+        return None
+    status = run.get("status")
+    entries = run.get("entries")
+    visible = [
+        entry for entry in entries
+        if isinstance(entry, dict) and entry.get("kind") in {"warning", "error", "stop"}
+        and isinstance(entry.get("text"), str)
+    ] if isinstance(entries, list) else []
+    if status not in {"failed", "blocked", "stopped"} and not visible:
+        return None
+    event = _CODEX_HOOK_LABELS.get(str(run.get("eventName") or ""), "Hook")
+    # The event enum is useful identity; sourcePath and context/feedback output
+    # are application internals and do not belong in a transcript notice.
+    verdict = status if status in {"failed", "blocked", "stopped"} else "warning"
+    title = f"Codex hook · {event} · {verdict}"
+    detail = "\n".join(entry["text"] for entry in visible)
+    if not detail and isinstance(run.get("statusMessage"), str):
+        detail = run["statusMessage"]
+    severity = "error" if status == "failed" or any(e["kind"] == "error" for e in visible) else "warning"
+    return HookNotice(severity, title, _clean(detail)[:1000])

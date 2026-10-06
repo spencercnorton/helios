@@ -22,7 +22,7 @@ from typing import Literal
 from helios.backend.process import codex_app_events
 
 
-CODEX_PROTOCOL_VERSION = "0.152.0"
+CODEX_PROTOCOL_VERSION = "0.160.1"
 
 NotificationDisposition = Literal["handled", "ignored", "unsupported", "unknown"]
 ServerRequestDisposition = Literal["supported", "denied", "unknown"]
@@ -56,6 +56,7 @@ IGNORED_NOTIFICATION_METHODS: frozenset[str] = frozenset(
         # Account/app authentication and catalog flows are owned by Codex CLI.
         "account/login/completed",
         "account/updated",
+        "account/gatewayOAuth/changed",
         "app/list/updated",
         "mcpServer/oauthLogin/completed",
         # Standalone command, filesystem, process, search, project, import,
@@ -104,8 +105,6 @@ UNSUPPORTED_NOTIFICATION_METHODS: dict[str, str] = {
     "autoApprovalReview/strictReviewRequired": (
         "strict auto-approval review state is not represented"
     ),
-    "hook/completed": "native hook activity is not represented",
-    "hook/started": "native hook activity is not represented",
     "item/autoApprovalReview/completed": (
         "auto-approval review activity is not represented"
     ),
@@ -128,6 +127,7 @@ UNSUPPORTED_NOTIFICATION_METHODS: dict[str, str] = {
     ),
     "skills/changed": "Codex skill inventory changes are not refreshed in Helios",
     "thread/archived": "native thread archival is not reconciled into Helios",
+    "thread/attachment/updated": "native thread attachments are not represented",
     "thread/closed": "native thread closure is not reconciled into Helios",
     "thread/deleted": "native thread deletion is not reconciled into Helios",
     "thread/reverted": "native thread reverts are not reconciled into Helios",
