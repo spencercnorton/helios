@@ -40,7 +40,7 @@ def stub_store(monkeypatch):
     monkeypatch.setattr(tg, "store", lambda: SimpleNamespace(get=lambda _session_id: None))
 
 
-def test_title_generation_defaults_to_local_ollama(monkeypatch):
+def test_title_generation_defaults_to_local_builtin(monkeypatch):
     generator = tg.TitleGenerator()
     selected_defaults: list[tuple[str, str]] = []
 
@@ -59,14 +59,14 @@ def test_title_generation_defaults_to_local_ollama(monkeypatch):
     calls: list[tuple[str, str]] = []
     monkeypatch.setattr(
         generator,
-        "_spawn_ollama",
+        "_spawn_builtin",
         lambda session_id, prompt: calls.append((session_id, prompt)),
     )
 
     generator._spawn(SimpleNamespace(session_id="session-1"))
 
     assert calls and calls[0][0] == "session-1"
-    assert ("title_backend", "ollama") in selected_defaults
+    assert ("title_backend", "builtin") in selected_defaults
 
 
 @pytest.mark.parametrize("invalid_backend", ["", "future", None, 7])
@@ -84,7 +84,7 @@ def test_invalid_title_backend_never_opts_into_cloud(
     local_calls = []
     monkeypatch.setattr(
         generator,
-        "_spawn_ollama",
+        "_spawn_builtin",
         lambda session_id, prompt: local_calls.append((session_id, prompt)),
     )
     monkeypatch.setattr(

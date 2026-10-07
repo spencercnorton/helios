@@ -462,23 +462,50 @@ class SettingsDialog(Adw.PreferencesDialog):
         )
         behavior.add(mission_gate_row)
 
-        ollama_row = Adw.SwitchRow()
-        ollama_row.set_title("Generate session titles with Ollama")
-        ollama_row.set_subtitle(
-            "Use Ollama on this computer or another server for short sidebar titles."
-        )
-        ollama_row.set_active(ui.get("title_backend", "ollama") == "ollama")
-        ollama_row.connect(
-            "notify::active",
-            lambda r, _p: ui.set("title_backend", "ollama" if r.get_active() else "claude"),
-        )
-        behavior.add(ollama_row)
+        self._title_backend_row = Adw.ComboRow()
+        self._title_backend_row.set_title("Title Generation Backend")
+        self._title_backend_row.set_subtitle("Select the engine used to generate session titles in the sidebar.")
+        self._title_backend_model = Gtk.StringList.new(["Built-in Local Engine", "Ollama", "Claude"])
+        self._title_backend_row.set_model(self._title_backend_model)
+        
+        backend_map = {"builtin": 0, "ollama": 1, "claude": 2}
+        reverse_map = {0: "builtin", 1: "ollama", 2: "claude"}
+        current_backend = ui.get("title_backend", "builtin")
+        self._title_backend_row.set_selected(backend_map.get(current_backend, 0))
+        
+        self._title_builtin_model_row = Adw.ComboRow()
+        self._title_builtin_model_row.set_title("Built-in Model")
+        self._title_builtin_model_list = Gtk.StringList.new(["Qwen 2.5 0.5B", "Llama 3.2 1B", "Phi-3 Mini"])
+        self._title_builtin_model_row.set_model(self._title_builtin_model_list)
+        
+        builtin_map = {"qwen2.5:0.5b": 0, "llama3.2:1b": 1, "phi3:mini": 2}
+        reverse_builtin_map = {0: "qwen2.5:0.5b", 1: "llama3.2:1b", 2: "phi3:mini"}
+        current_builtin = ui.get("title_builtin_model", "qwen2.5:0.5b")
+        self._title_builtin_model_row.set_selected(builtin_map.get(current_builtin, 0))
+        
+        self._title_builtin_model_row.connect("notify::selected", lambda r, _p: ui.set("title_builtin_model", reverse_builtin_map.get(r.get_selected(), "qwen2.5:0.5b")))
+        
+        behavior.add(self._title_backend_row)
+        behavior.add(self._title_builtin_model_row)
+
         self._ollama_url_row = Adw.EntryRow(title="Ollama server URL")
         self._ollama_url_row.set_text(str(ui.get("ollama_url", ollama_titles.DEFAULT_URL) or ollama_titles.DEFAULT_URL))
         self._ollama_model_row = Adw.EntryRow(title="Title model")
         self._ollama_model_row.set_text(str(ui.get("ollama_title_model", ollama_titles.DEFAULT_MODEL) or ollama_titles.DEFAULT_MODEL))
         behavior.add(self._ollama_url_row)
         behavior.add(self._ollama_model_row)
+
+        def _update_visibility(*args):
+            idx = self._title_backend_row.get_selected()
+            is_ollama = (idx == 1)
+            is_builtin = (idx == 0)
+            self._ollama_url_row.set_visible(is_ollama)
+            self._ollama_model_row.set_visible(is_ollama)
+            self._title_builtin_model_row.set_visible(is_builtin)
+            ui.set("title_backend", reverse_map.get(idx, "builtin"))
+
+        self._title_backend_row.connect("notify::selected", _update_visibility)
+        _update_visibility()
         self._ollama_status_row = Adw.ActionRow(title="Ollama connection")
         self._ollama_status_row.set_use_markup(False)
         self._ollama_status_row.set_subtitle("Save these settings and check model availability without generating text.")
