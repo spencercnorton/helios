@@ -174,9 +174,9 @@ def test_memory_dir_change_does_not_reload_a_dirty_open_editor(tmp_path, make_pa
 
     # The SAME file that's open gets modified externally (e.g. Claude
     # rewrote it mid-session).
-    open_file.write_text(
-        "---\nname: open\n---\n\nExternally changed.\n", encoding="utf-8"
-    )
+    tmp = open_file.with_suffix(".tmp")
+    tmp.write_text("---\nname: open\n---\n\nExternally changed.\n", encoding="utf-8")
+    tmp.rename(open_file)
     assert _pump(lambda: pane._memory_banner.get_revealed())
 
     # The dirty editor is untouched — still the unsaved edit, not reloaded.

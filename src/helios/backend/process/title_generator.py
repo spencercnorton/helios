@@ -185,13 +185,17 @@ class TitleGenerator(GObject.Object):
             assistant=(assistant_text or "(no reply yet)")[:_MAX_ASSISTANT_CHARS],
         )
 
-        # Local-LLM backend: do the call over HTTP on a worker thread instead
+        # Local-LLM backend: do the call over HTTP or local subprocess on a worker thread instead
         # of spawning Claude. This is the safe default: title generation is
         # housekeeping and must not consume an invisible cloud budget.
-        # Cloud title generation is exact opt-in. Corrupt/future values must
-        # narrow to local rather than silently spending through Claude.
-        if ui_state_store().get("title_backend", "ollama") != "claude":
+        backend = ui_state_store().get("title_backend", "builtin")
+        if backend == "claude":
+            pass # fall through to Claude below
+        elif backend == "ollama":
             self._spawn_ollama(session.session_id, prompt)
+            return
+        else:
+            self._spawn_builtin(session.session_id, prompt)
             return
 
         # Resolve binary lazily so an unavailable claude doesn't break startup.
@@ -344,6 +348,28 @@ class TitleGenerator(GObject.Object):
 
     def _finish_ollama(self, session_id: str, title: str) -> bool:
         # set_if_absent: don't clobber a manual rename made mid-flight.
+        if title and store().set_if_absent(session_id, title):
+            self.emit("title-generated", session_id, title)
+        self._in_flight = ""
+        GLib.timeout_add(120, self._pump_tick)
+        return False  # one-shot idle
+
+    def _spawn_builtin(self, session_id: str, prompt: str) -> None:
+        """Generate a title via the builtin zero-config local engine on a worker thread."""
+        model_key = ui_state_store().get("builtin_title_model", "qwen2.5-0.5b")
+
+        def worker() -> None:
+            title = ""
+            try:
+                from helios.backend.process.local_engine import generate as builtin_generate
+                title = builtin_generate(model_key, prompt)
+            except Exception as e:
+                _log.debug("builtin title failed: %s", e)
+            GLib.idle_add(self._finish_builtin, session_id, _clean_title(title))
+
+        threading.Thread(target=worker, name="helios-titlegen-builtin", daemon=True).start()
+
+    def _finish_builtin(self, session_id: str, title: str) -> bool:
         if title and store().set_if_absent(session_id, title):
             self.emit("title-generated", session_id, title)
         self._in_flight = ""
