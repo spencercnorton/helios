@@ -1,5 +1,14 @@
 # Helios — Session Journal
 
+## 2026-10-10 — gekleos — recognize Google provider in session manager
+
+- **Branch:** `antigravity/fix-google-session-identity`
+- **What changed:** recognized `google` provider in `_driver_provider`, `_adopt_session_provider`, and `_on_session_started`, preventing native Google sessions from being rejected as unknown provider identities; updated assistant and transcript labels; avoided tool snapshot clobbering.
+- **Validation:** focused unit tests passed in `test_execution_settings_window.py`; 3,356 tests passed on Apollo; Ruff, compileall, whitespace and version agreement clean.
+- **Release:** 0.101.3 prepared for the pull request and tag-driven release.
+- **Next step:** submit pull request on GitHub and verify CI.
+- **Status file updated:** separate operating record tracks rollout.
+
 ## 2026-10-10 — gekleos — Google model effort grouping and permissions integration
 
 - **Branch:** `antigravity/google-effort-and-permissions`
