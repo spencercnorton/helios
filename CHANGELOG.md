@@ -4,6 +4,19 @@ All notable changes to Helios are documented here. Each release is a
 `vX.Y.Z` tag on `main`; its GitHub Release carries the `.deb`, the tagged
 source (`source.tar.gz`) and `SHA256SUMS.txt`.
 
+## 0.101.1 — 2026-10-10
+
+### Fixed
+
+- Google models and labels now come from the live Antigravity catalog, without guessed models or context sizes. Account sign-in is verified through native quota results.
+- Google sessions use Antigravity's persistent streaming protocol, native conversation IDs and terminal results, including guarded Work admission and uncertain-delivery handling.
+- API/custom provider configurations and AI-credit fallback are refused on the Google account route; the separate Gemini CLI is no longer treated as an interchangeable transport.
+- Google Settings shows the actual account/discovery status and refreshes model choices without blocking the main loop.
+
+### Changed
+
+- Google sessions offer Never ask with terminal sandboxing; workspace edits remain possible under the native CLI's policy. Added setup instructions and a separate-worktree trial workflow.
+
 ## 0.101.0 — 2026-10-06
 
 ### Added

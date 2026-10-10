@@ -3,7 +3,9 @@
 Everything the README's pictures do not say. Helios is a desktop for coding
 agents you already have: it drives the official `claude` CLI, binds GPT
 sessions to a Codex App Server, and runs its own agent loop for OpenRouter
-models. Nothing here replaces those tools' own sign-in, settings or context
+models. Google sessions use Antigravity CLI; see
+[Google account setup and safe trials](google-subscription.md).
+Nothing here replaces those tools' own sign-in, settings or context
 files — Helios reads them and shows you what they are doing. Under
 `~/.claude/projects/` it writes only the folder for a chat's working
 directory, mirrors of GPT and OpenRouter transcripts in Claude's format, the
@@ -27,8 +29,8 @@ activates the running window instead of opening another.
 ## First run
 
 **The window.** Left, the sessions sidebar; centre, the transcript and the
-composer; right, an optional workspace pane. The header holds the provider
-toggle (**Claude · GPT · OpenRouter**), *New chat* (`Ctrl+N`, or `Ctrl+Shift+N`
+composer; right, an optional workspace pane. The header holds
+*New chat* (`Ctrl+N`, or `Ctrl+Shift+N`
 to pick the folder first), search (`Ctrl+F`), reload, Settings, and the
 workspace-pane switcher.
 
@@ -79,7 +81,7 @@ disable titling: it switches to metered Claude titles (`claude --print --model
 haiku`, capped at $0.05 per title). Right-click a row → *Rename…* sets a
 title by hand.
 
-**Starting a chat.** Pick the provider in the header, choose a folder, type,
+**Starting a chat.** Pick a model in the toolbar, choose a folder, type,
 and send with `Ctrl+Enter`. `Enter` is a newline. Typing `/` lists Helios's
 agent commands and, in Claude chats, the CLI's own commands and skills with
 descriptions; the attach button inserts a file as `@path`. While an agent
@@ -88,6 +90,12 @@ works you can keep typing — the message queues and goes when the turn ends.
 composer.
 
 ## Permissions
+
+Google currently offers **Never ask** only, requires a project folder, and
+can still write workspace files. Its headless approval behavior differs
+from the providers in the table below; read
+[Google permission limits](google-subscription.md#permission-limits)
+before starting a trial.
 
 Permissions are the third value of the **Execution** capsule beside the model
 picker in the chat toolbar (`Default · High · Ask` = workflow · reasoning ·

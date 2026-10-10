@@ -1,5 +1,14 @@
 # Helios — Session Journal
 
+## 2026-10-10 — gekleos — Google subscription transport repair
+
+- **Branch:** `fix/google-subscription-bridge`
+- **What changed:** live Antigravity model discovery and account-quota checks, account-only routing, corrected native stream/session protocol, durable Work admission and receipts, transcript mirrors, and provider-specific headless permissions.
+- **Validation:** authenticated two-turn continuity and process-group shutdown passed in an isolated scratch folder; focused protocol and failure-path tests passed. Full GTK release validation is recorded in the pull request.
+- **Release:** 0.101.1 prepared for the pull request and tag-driven release.
+- **Next step:** use an isolated worktree for bounded Google tasks and review proposed changes before merging.
+- **Status file updated:** separate operating record tracks rollout.
+
 ## 2026-10-06 — gekleos — native CLI data presentation
 
 - **Branch:** `fix/cli-data-presentation`

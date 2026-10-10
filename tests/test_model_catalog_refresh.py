@@ -80,6 +80,102 @@ def test_persisted_gpt_does_not_enable_explicit_new_chat_action_before_catalog()
     assert fake._new_gpt_btn.sensitive is False
 
 
+@pytest.fixture
+def forbid_google_catalog_probe(monkeypatch):
+    def unexpected_probe(*_args, **_kwargs):
+        pytest.fail("GTK callbacks must use the applied Google catalog, not run discovery")
+
+    monkeypatch.setattr(model_catalog, "google_entries", unexpected_probe)
+
+
+def _applied_google_entries():
+    return [
+        model_catalog.ModelEntry(
+            "gemini-3.1-pro-high", "Gemini Pro", "Google subscription",
+            provider=model_catalog.PROVIDER_GOOGLE,
+        ),
+        model_catalog.ModelEntry(
+            "gemini-3.8-flash-medium", "Gemini Flash", "Google subscription",
+            provider=model_catalog.PROVIDER_GOOGLE, is_default=True,
+        ),
+    ]
+
+
+def test_google_model_switch_preserves_valid_applied_memory(forbid_google_catalog_probe):
+    entries = _applied_google_entries()
+    fake = types.SimpleNamespace(
+        _provider_models={model_catalog.PROVIDER_GOOGLE: entries[0].id},
+        _catalog_entries_by_id={entry.id: entry for entry in entries},
+    )
+
+    assert MainWindow._model_for_provider(fake, model_catalog.PROVIDER_GOOGLE) == entries[0].id
+
+
+@pytest.mark.parametrize("remembered", ["", "gemini-retired"])
+def test_google_model_switch_uses_the_applied_default(forbid_google_catalog_probe, remembered):
+    entries = _applied_google_entries()
+    fake = types.SimpleNamespace(
+        _provider_models={model_catalog.PROVIDER_GOOGLE: remembered},
+        _catalog_entries_by_id={entry.id: entry for entry in entries},
+    )
+
+    assert MainWindow._model_for_provider(fake, model_catalog.PROVIDER_GOOGLE) == entries[1].id
+
+
+def test_google_model_switch_cannot_restore_a_foreign_provider_row(forbid_google_catalog_probe):
+    foreign = model_catalog.ModelEntry(
+        "gemini-foreign", "Foreign Gemini", "OpenRouter",
+        provider=model_catalog.PROVIDER_OPENROUTER,
+    )
+    fake = types.SimpleNamespace(
+        _provider_models={model_catalog.PROVIDER_GOOGLE: foreign.id},
+        _catalog_entries_by_id={foreign.id: foreign},
+    )
+
+    assert MainWindow._model_for_provider(fake, model_catalog.PROVIDER_GOOGLE) == ""
+
+
+def test_google_model_switch_before_catalog_has_no_invented_default(forbid_google_catalog_probe):
+    fake = types.SimpleNamespace(
+        _provider_models={model_catalog.PROVIDER_GOOGLE: "gemini-retired"},
+    )
+
+    assert MainWindow._model_for_provider(fake, model_catalog.PROVIDER_GOOGLE) == ""
+
+
+@pytest.mark.parametrize("available", [True, False])
+def test_google_new_chat_button_uses_only_applied_google_rows(forbid_google_catalog_probe, available):
+    rows = _applied_google_entries() if available else [
+        model_catalog.ModelEntry(
+            "gemini-foreign", "Foreign Gemini", "OpenRouter",
+            provider=model_catalog.PROVIDER_OPENROUTER,
+        ),
+    ]
+    button = _Toggle()
+    fake = types.SimpleNamespace(
+        _new_gemini_btn=button,
+        _catalog_entries_by_id={entry.id: entry for entry in rows},
+    )
+
+    MainWindow._sync_new_chat_actions(fake)
+
+    assert button.sensitive is available
+    assert button.tooltip == (
+        "Start a new Gemini chat" if available
+        else "Sign in to Google subscription in Settings → Providers"
+    )
+
+
+def test_google_new_chat_button_before_catalog_stays_disabled(forbid_google_catalog_probe):
+    button = _Toggle()
+    fake = types.SimpleNamespace(_new_gemini_btn=button)
+
+    MainWindow._sync_new_chat_actions(fake)
+
+    assert button.sensitive is False
+    assert "Sign in" in button.tooltip
+
+
 def test_authoritative_catalog_reenables_valid_persisted_gpt():
     entry = model_catalog.ModelEntry(
         "gpt-5-current",

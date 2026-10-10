@@ -43,6 +43,7 @@ _log = get_logger("codex-transcript")
 _VERSION_TAGS: dict[str, str] = {
     model_catalog.PROVIDER_OPENAI: "helios-codex",
     model_catalog.PROVIDER_OPENROUTER: "helios-openrouter",
+    model_catalog.PROVIDER_GOOGLE: "helios-gemini",
 }
 
 # Ordered-content schema marker value (H0.5). Its PRESENCE (the key is owned by
