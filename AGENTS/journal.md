@@ -1,5 +1,14 @@
 # Helios — Session Journal
 
+## 2026-10-10 — gekleos — buffer startup prompts in Google CLI driver
+
+- **Branch:** `antigravity/buffer-google-startup-prompt`
+- **What changed:** buffer user prompts submitted while the native Google CLI initializes, dispatching them automatically upon native init verification and properly releasing buffered attempts on early aborts.
+- **Validation:** focused unit tests passed in `test_gemini_driver.py` and `test_execution_settings_window.py`; full test suite on Apollo; Ruff, compileall, whitespace and version agreement clean.
+- **Release:** 0.101.4 prepared for the pull request and tag-driven release.
+- **Next step:** submit pull request on GitHub and verify CI.
+- **Status file updated:** separate operating record tracks rollout.
+
 ## 2026-10-10 — gekleos — recognize Google provider in session manager
 
 - **Branch:** `antigravity/fix-google-session-identity`
