@@ -334,14 +334,36 @@ def test_all_permission_modes_supported(driver_factory, mode, expected_flags, un
     assert driver.is_accepting_input
 
 
-def test_send_before_verified_native_init_cannot_write(driver_factory):
+def test_send_before_verified_native_init_buffers_and_dispatches_on_init(driver_factory):
     driver = driver_factory(ready=False)
 
     outcome = driver.send_user_text("must remain local")
 
-    assert outcome.rejected
+    assert outcome.pending
+    assert driver._startup_pending_text == "must remain local"
     assert driver._test_process.stdin.writes == []
-    assert driver._test_lifecycle == []
+
+    # Second send during startup is rejected:
+    assert driver.send_user_text("second during startup").rejected
+
+    # When native init arrives, it dispatches the buffered prompt:
+    driver._dispatch_message(_init_frame(driver._cwd))
+    _drain_main_context()
+
+    assert driver._startup_pending_text is None
+    assert len(driver._test_process.stdin.writes) == 1
+    frame = json.loads(driver._test_process.stdin.writes[0].decode("utf-8"))
+    assert frame["event"] == "user"
+    assert frame["message"]["content"] == "must remain local"
+
+
+def test_startup_abort_releases_buffered_prompt(driver_factory):
+    driver = driver_factory(ready=False)
+    outcome = driver.send_user_text("buffered")
+    assert outcome.pending
+    driver.stop()
+    assert driver._startup_pending_text is None
+    assert any(row[0] == "terminal" and row[2].status == "aborted" for row in driver._test_lifecycle)
 
 
 def test_missing_selected_model_fails_before_spawn(driver_factory):

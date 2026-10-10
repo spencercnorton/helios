@@ -102,6 +102,7 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
         self._seen_result_turns = 0
         self._last_step_index = -1
         self._dispatch_step_floor = -1
+        self._startup_pending_text: str | None = None
         self._transcript = CodexTranscriptWriter(cwd, provider=model_catalog.PROVIDER_GOOGLE)
         self.init_tools: list[str] = []
         self.init_mcp_servers: dict[str, Any] = {}
@@ -116,7 +117,12 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
 
     @property
     def is_accepting_input(self) -> bool:
-        return self._accepting_input and not self._stopped
+        return (
+            self._accepting_input
+            and not self._stopped
+            and not self._accounting_failed
+            and self.is_running
+        )
 
     @property
     def session_id(self) -> str:
@@ -173,16 +179,49 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
         threading.Thread(target=self._read_stderr, daemon=True, name="google-stderr").start()
         threading.Thread(target=self._read_stdout, daemon=True, name="google-stdout").start()
 
-    def send_user_text(self, text: str) -> MessageDelivery:
+    def send_user_text(
+        self,
+        text: str,
+        *,
+        _reuse_execution_attempt: bool = False,
+    ) -> MessageDelivery:
         if not self.is_running or not self._proc or not self._proc.stdin or self._stopped:
             self.emit("error", "Google process is not running. Sign in with `agy` in a terminal.")
             return MessageDelivery("rejected")
-        if self.is_busy:
+        if self._accounting_failed:
+            self.emit("error", "Helios could not verify Google accounting. New Work remains blocked.")
+            return MessageDelivery("rejected")
+        if self.is_busy and self._startup_pending_text is None:
             self.emit("error", "Google is still processing the current turn.")
             return MessageDelivery("rejected")
-        if not self._accepting_input or not self._session_id:
-            self.emit("error", "Google is still checking its native session. Wait for startup, then send again.")
-            return MessageDelivery("rejected")
+        if not self._session_id:
+            if self._startup_pending_text is not None:
+                self.emit("error", "Google is still preparing this session.")
+                return MessageDelivery("rejected")
+            reason = self._execution_block_reason()
+            if reason:
+                self.emit("error", reason)
+                return MessageDelivery("rejected")
+            try:
+                # Recheck routing before each turn, including queued turns.
+                google_subscription_env()
+                self._prepare_prompt_context(text)
+            except RequiredPromptContextError as exc:
+                self.emit("error", exc.user_message)
+                return MessageDelivery("rejected")
+            except ValueError as exc:
+                self.emit("error", str(exc))
+                return MessageDelivery("rejected")
+            admission_error = self._begin_execution_attempt(
+                reuse_existing=_reuse_execution_attempt
+            )
+            if admission_error:
+                self.emit("error", admission_error)
+                return MessageDelivery("rejected")
+            self._startup_pending_text = text
+            self._is_busy = True
+            self._last_active = time.monotonic()
+            return MessageDelivery("pending")
         reason = self._execution_block_reason()
         if reason:
             self.emit("error", reason)
@@ -197,7 +236,9 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
         except ValueError as exc:
             self.emit("error", str(exc))
             return MessageDelivery("rejected")
-        reason = self._begin_execution_attempt()
+        reason = self._begin_execution_attempt(
+            reuse_existing=_reuse_execution_attempt
+        )
         if reason:
             self.emit("error", reason)
             return MessageDelivery("rejected")
@@ -295,7 +336,11 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
                 return False
             self._session_id = sid
             self._accepting_input = True
+            pending, self._startup_pending_text = self._startup_pending_text, None
+            self._is_busy = False
             self.emit("session-started", sid, self._cwd, self._model)
+            if pending:
+                self.send_user_text(pending, _reuse_execution_attempt=True)
         elif event == "step_update":
             step = msg.get("step_update")
             if not isinstance(step, dict) or not self._is_busy or self._stopped:
@@ -386,12 +431,28 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
                 self._flush_user_queue()
         return False
 
+    def _finish_predispatch_attempt(self) -> bool:
+        if self._startup_pending_text is None:
+            return True
+        self._startup_pending_text = None
+        self._is_busy = False
+        return self._finish_execution_with_evidence(
+            ExecutionTerminalEvidence(
+                evidence_type="local_abort",
+                status="aborted",
+                reason_code="local_abort",
+                queue_disposition="restored",
+            )
+        )
+
     def _hold_accounting_failure(self, message: str) -> None:
         self._accounting_failed = True
         self._accepting_input = False
+        self._finish_predispatch_attempt()
         self.emit("error", message)
 
     def _protocol_failure(self, message: str) -> None:
+        self._finish_predispatch_attempt()
         self.emit("error", message)
         self.stop()
 
@@ -419,6 +480,7 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
     def stop(self, *, interrupt: bool = True) -> None:
         self._stopped = True
         self._accepting_input = False
+        self._finish_predispatch_attempt()
         if self._proc is not None and self._proc.poll() is None:
             try:
                 # Stop the whole local process group; do not infer remote
@@ -440,6 +502,7 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
 
     def end_input(self) -> None:
         self._accepting_input = False
+        self._finish_predispatch_attempt()
         if self._proc is not None and self._proc.stdin is not None:
             try:
                 self._proc.stdin.close()
@@ -451,6 +514,7 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
 
     def _on_exit(self, code: int) -> bool:
         self._accepting_input = False
+        self._finish_predispatch_attempt()
         if self.execution_attempt_id:
             self.emit("error", "Google exited without a confirmed terminal receipt. This Work remains blocked; its input will not be replayed.")
         else:

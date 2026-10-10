@@ -4,6 +4,13 @@ All notable changes to Helios are documented here. Each release is a
 `vX.Y.Z` tag on `main`; its GitHub Release carries the `.deb`, the tagged
 source (`source.tar.gz`) and `SHA256SUMS.txt`.
 
+## 0.101.4 — 2026-10-10
+
+### Fixed
+
+- User prompts submitted while the Google CLI driver initializes are buffered as pending rather than rejected, automatically dispatching to the native CLI once native initialization completes.
+- Aborted or interrupted Google session startups cleanly release buffered prompt attempts and execution lanes.
+
 ## 0.101.3 — 2026-10-10
 
 ### Fixed
