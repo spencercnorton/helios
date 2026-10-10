@@ -4,6 +4,13 @@ All notable changes to Helios are documented here. Each release is a
 `vX.Y.Z` tag on `main`; its GitHub Release carries the `.deb`, the tagged
 source (`source.tar.gz`) and `SHA256SUMS.txt`.
 
+## 0.101.3 — 2026-10-10
+
+### Fixed
+
+- Google provider identity is recognized by the session manager and live driver registry so native session starts are accepted rather than rejected as unknown provider identities.
+- Google assistant labels and transcript views display the proper provider name and avoid overwriting Claude's tool snapshot.
+
 ## 0.101.2 — 2026-10-10
 
 ### Fixed

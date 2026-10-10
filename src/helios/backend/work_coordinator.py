@@ -223,6 +223,8 @@ class WorkCoordinator:
         for provider in (
             model_catalog.PROVIDER_ANTHROPIC,
             model_catalog.PROVIDER_OPENAI,
+            model_catalog.PROVIDER_GOOGLE,
+            model_catalog.PROVIDER_OPENROUTER,
         ):
             work_id = self.store.work_id_for_native_session(provider, native_id)
             if not work_id:

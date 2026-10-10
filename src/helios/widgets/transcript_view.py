@@ -707,6 +707,7 @@ class TranscriptView(Gtk.Box):
         self._assistant_label = (
             "GPT" if provider == model_catalog.PROVIDER_OPENAI
             else "OpenRouter" if provider == model_catalog.PROVIDER_OPENROUTER
+            else "Google" if provider == model_catalog.PROVIDER_GOOGLE
             else "Claude"
         )
         self._render_token += 1
@@ -785,6 +786,9 @@ class TranscriptView(Gtk.Box):
             else "OpenRouter"
             if resolution.known
             and resolution.provider == model_catalog.PROVIDER_OPENROUTER
+            else "Google"
+            if resolution.known
+            and resolution.provider == model_catalog.PROVIDER_GOOGLE
             else "Claude"
             if resolution.known
             and resolution.provider == model_catalog.PROVIDER_ANTHROPIC

@@ -1277,6 +1277,59 @@ def test_session_started_persists_provider_native_execution_settings():
     }
 
 
+def test_driver_provider_resolves_google():
+    driver = SimpleNamespace(provider="google")
+    manager = SimpleNamespace(driver_provider=lambda d, default="": getattr(d, "provider", default))
+    window = SimpleNamespace(_driver_manager=manager)
+    assert MainWindow._driver_provider(window, driver) == "google"
+
+
+def test_session_started_confirms_google_runtime_identity():
+    conversations = _ConversationStore()
+    registered: list[tuple[object, str]] = []
+    driver = _AsyncDriver(
+        provider="google",
+        session_id="",
+        permission_mode="default",
+        effort_key="high",
+    )
+    manager = SimpleNamespace(
+        starting=object(),
+        register_started=lambda candidate, session_id: registered.append(
+            (candidate, session_id)
+        ),
+        driver_provider=lambda d, default="": getattr(d, "provider", default),
+    )
+    window = SimpleNamespace(
+        _driver_manager=manager,
+        _work_coordinator=None,
+        _conversation_perms=conversations,
+        _driver_provider=lambda candidate: MainWindow._driver_provider(window, candidate),
+        _drv_is_current=lambda _candidate: False,
+        _bind_pending_goal_to_session=lambda *_args: None,
+        _destroyed=False,
+    )
+
+    MainWindow._on_session_started(
+        window,
+        driver,
+        "google-native-session-id",
+        "/repo",
+        "gemini-3.8-flash",
+    )
+
+    assert registered == [(driver, "google-native-session-id")]
+    assert driver._helios_identity_confirmed is True
+    assert conversations.permission_calls == [
+        ("google", "google-native-session-id", "default", "high")
+    ]
+    assert conversations.values[("google", "google-native-session-id")] == {
+        "permission_mode": "default",
+        "effort_key": "high",
+    }
+
+
+
 @pytest.mark.parametrize("driver_provider", ["", "local-model"])
 def test_session_started_rejects_invalid_runtime_provider(driver_provider):
     conversations = _ConversationStore()

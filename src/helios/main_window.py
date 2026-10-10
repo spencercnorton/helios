@@ -3142,6 +3142,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             model_catalog.PROVIDER_ANTHROPIC,
             model_catalog.PROVIDER_OPENAI,
             model_catalog.PROVIDER_OPENROUTER,
+            model_catalog.PROVIDER_GOOGLE,
         ):
             return
         if provider == self._selected_provider():
@@ -3403,6 +3404,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
                 model_catalog.PROVIDER_ANTHROPIC,
                 model_catalog.PROVIDER_OPENAI,
                 model_catalog.PROVIDER_OPENROUTER,
+                model_catalog.PROVIDER_GOOGLE,
             )
             else ""
         )
@@ -3425,6 +3427,8 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             return "GPT"
         if provider == model_catalog.PROVIDER_OPENROUTER:
             return "OpenRouter"
+        if provider == model_catalog.PROVIDER_GOOGLE:
+            return "Google"
         return "Claude"
 
     def _sync_assistant_labels(self) -> None:
@@ -6297,6 +6301,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             model_catalog.PROVIDER_ANTHROPIC,
             model_catalog.PROVIDER_OPENAI,
             model_catalog.PROVIDER_OPENROUTER,
+            model_catalog.PROVIDER_GOOGLE,
         ):
             MainWindow._reject_started_identity(
                 self,
@@ -6460,7 +6465,10 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             if provider == model_catalog.PROVIDER_OPENAI:
                 if drv.init_mcp_servers:
                     codex_env.save_mcp_snapshot(drv.init_mcp_servers)
-            elif provider != model_catalog.PROVIDER_OPENROUTER:
+            elif provider not in (
+                model_catalog.PROVIDER_OPENROUTER,
+                model_catalog.PROVIDER_GOOGLE,
+            ):
                 claude_env.save_init_snapshot(drv.init_tools, drv.init_mcp_servers)
         except Exception:
             pass
