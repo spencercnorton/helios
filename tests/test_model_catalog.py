@@ -566,7 +566,14 @@ def test_google_entries_and_preferred(monkeypatch):
     from helios.backend.google_env import GoogleAuthStatus, GoogleModel
     fake_auth_ok = GoogleAuthStatus(
         logged_in=False,
-        models=(GoogleModel("gemini-3.8-flash-high", "Gemini 3.8 Flash (High)"),),
+        models=(
+            GoogleModel(
+                "gemini-3.8-flash",
+                "Gemini 3.8 Flash",
+                reasoning_efforts=(("low", "Low"), ("medium", "Medium"), ("high", "High")),
+                default_effort="high",
+            ),
+        ),
         catalog_status="agy-models",
     )
     fake_auth_fail = GoogleAuthStatus(logged_in=False, error="CLI unavailable")
@@ -574,8 +581,11 @@ def test_google_entries_and_preferred(monkeypatch):
     entries, status = mc.google_entries(auth=fake_auth_ok)
     assert status == "agy-models"
     assert len(entries) == 1
-    assert entries[0].label == "Gemini 3.8 Flash (High)"
-    assert mc.preferred_google_model(entries) == "gemini-3.8-flash-high"
+    assert entries[0].id == "gemini-3.8-flash"
+    assert entries[0].label == "Gemini 3.8 Flash"
+    assert entries[0].reasoning_efforts == (("low", "Low"), ("medium", "Medium"), ("high", "High"))
+    assert entries[0].default_effort == "high"
+    assert mc.preferred_google_model(entries) == "gemini-3.8-flash"
 
     entries_fail, status_fail = mc.google_entries(auth=fake_auth_fail)
     assert status_fail == "unavailable"

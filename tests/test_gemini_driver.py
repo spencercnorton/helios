@@ -27,7 +27,7 @@ from helios.backend.process.message_queue import (
 from helios.backend.process.streaming import StreamingAssistant
 
 
-MODEL = "gemini-3.8-flash-medium"
+MODEL = "gemini-3.8-flash"
 NATIVE_ID = "c3b66b04-872b-4fbe-a3a4-058a026ef20a"
 
 
@@ -174,12 +174,13 @@ def driver_factory(monkeypatch, tmp_path):
 
     monkeypatch.setattr(gd.subprocess, "Popen", popen)
 
-    def make(*, resume=None, ready=True, model=MODEL, permission_mode="dontAsk"):
+    def make(*, resume=None, ready=True, model=MODEL, permission_mode="dontAsk", effort=""):
         driver = GeminiCliDriver(
             cwd=str(project),
             model=model,
             permission_mode=permission_mode,
             resume_session_id=resume,
+            effort=effort,
         )
         driver._test_errors = []
         driver._test_lifecycle = []
@@ -282,11 +283,55 @@ def test_start_uses_persistent_agy_flags_and_sandbox(driver_factory):
     assert command[command.index("--input-format") + 1] == "stream-json"
     assert command[command.index("--output-format") + 1] == "stream-json"
     assert command[command.index("--model") + 1] == MODEL
+    assert command[command.index("--effort") + 1] == "high"
     assert "--sandbox" in command
     assert "--print" not in command
     assert "--resume" not in command
     assert "--dangerously-skip-permissions" not in command
     assert not driver.is_accepting_input
+
+
+def test_start_passes_custom_effort(driver_factory):
+    driver = driver_factory(ready=False, effort="low")
+    command = driver._test_process.command
+    assert command[command.index("--effort") + 1] == "low"
+    assert driver.effort_key == "low"
+
+
+def test_start_normalizes_legacy_model_effort_suffix(driver_factory):
+    driver = driver_factory(ready=False, model="gemini-3.8-flash-medium")
+    command = driver._test_process.command
+    assert command[command.index("--model") + 1] == "gemini-3.8-flash"
+    assert command[command.index("--effort") + 1] == "medium"
+    assert driver.effort_key == "medium"
+
+
+@pytest.mark.parametrize(
+    "mode,expected_flags,unexpected_flags,expected_perm",
+    [
+        ("bypassPermissions", ["--dangerously-skip-permissions"], ["--sandbox"], "always-proceed"),
+        ("plan", ["--mode", "plan", "--sandbox"], ["--dangerously-skip-permissions"], "request-review"),
+        ("acceptEdits", ["--mode", "accept-edits", "--sandbox"], ["--dangerously-skip-permissions"], "request-review"),
+        ("dontAsk", ["--sandbox"], ["--dangerously-skip-permissions"], "request-review"),
+        ("default", ["--sandbox"], ["--dangerously-skip-permissions"], "request-review"),
+        ("auto", ["--sandbox"], ["--dangerously-skip-permissions"], "request-review"),
+    ],
+)
+def test_all_permission_modes_supported(driver_factory, mode, expected_flags, unexpected_flags, expected_perm):
+    driver = driver_factory(ready=False, permission_mode=mode)
+    command = driver._test_process.command
+    for flag in expected_flags:
+        assert flag in command
+    for flag in unexpected_flags:
+        assert flag not in command
+
+    # Verify matching init succeeds
+    frame = _init_frame(driver._cwd)
+    frame["init"]["permission_mode"] = expected_perm
+    driver._dispatch_message(frame)
+    _drain_main_context()
+    assert driver.session_id == NATIVE_ID
+    assert driver.is_accepting_input
 
 
 def test_send_before_verified_native_init_cannot_write(driver_factory):

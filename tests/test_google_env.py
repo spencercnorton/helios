@@ -114,19 +114,32 @@ def test_subscription_env_drops_api_and_cloud_route_overrides(agy, monkeypatch):
     assert env["HOME"]
 
 
-def test_catalog_parser_keeps_exact_google_rows_and_labels():
+def test_catalog_parser_collapses_effort_variants_into_base_models():
     output = (
         "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
+        "gemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)\n"
+        "gemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n"
         "claude-5.5-thinking\tClaude 5.5\n"
         "gemini-3.1-pro-low\tGemini 3.1 Pro (Low)\n"
+        "gemini-3.1-pro-high\tGemini 3.1 Pro (High)\n"
         "gemini-3.8-flash-high\tDuplicate\n"
         "unknown header\n"
         "gemini-invalid model\tUnsafe identifier\n"
         "gemini-no-label\t\n"
     )
     assert ge.parse_model_catalog(output) == (
-        ge.GoogleModel("gemini-3.8-flash-high", "Gemini 3.8 Flash (High)"),
-        ge.GoogleModel("gemini-3.1-pro-low", "Gemini 3.1 Pro (Low)"),
+        ge.GoogleModel(
+            "gemini-3.8-flash",
+            "Gemini 3.8 Flash",
+            reasoning_efforts=(("low", "Low"), ("medium", "Medium"), ("high", "High")),
+            default_effort="high",
+        ),
+        ge.GoogleModel(
+            "gemini-3.1-pro",
+            "Gemini 3.1 Pro",
+            reasoning_efforts=(("low", "Low"), ("high", "High")),
+            default_effort="high",
+        ),
     )
 
 
@@ -148,7 +161,7 @@ def test_live_catalog_is_cached_and_available_without_auth_proof(agy, monkeypatc
         calls.append(argv)
         assert kwargs["timeout"] <= 8
         if argv[1:] == ["models"]:
-            return SimpleNamespace(returncode=0, stdout="gemini-3.8-flash-high\tGemini Flash High\n")
+            return SimpleNamespace(returncode=0, stdout="gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n")
         return SimpleNamespace(returncode=1, stdout="")
 
     monkeypatch.setattr(ge.subprocess, "run", run)
@@ -159,8 +172,10 @@ def test_live_catalog_is_cached_and_available_without_auth_proof(agy, monkeypatc
     assert status.plan_name == ""
     entries, source = mc.google_entries(auth=status)
     assert source == "agy-models"
-    assert [entry.id for entry in entries] == ["gemini-3.8-flash-high"]
-    assert entries[0].label == "Gemini Flash High"
+    assert [entry.id for entry in entries] == ["gemini-3.8-flash"]
+    assert entries[0].label == "Gemini 3.8 Flash"
+    assert entries[0].reasoning_efforts == (("high", "High"),)
+    assert entries[0].default_effort == "high"
     assert "context" not in entries[0].description
     first_calls = len(calls)
     assert ge.fetch_auth_status().models == status.models

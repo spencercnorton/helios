@@ -2843,7 +2843,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
                 default_effort=entry.default_effort,
                 selected_effort=selected_effort,
             )
-        elif provider == model_catalog.PROVIDER_OPENAI:
+        elif provider in (model_catalog.PROVIDER_OPENAI, model_catalog.PROVIDER_GOOGLE):
             entry = self._catalog_entries_by_id.get(execution_model)
             if entry is None:
                 self._chat_toolbar.set_effort_sensitive(False)
