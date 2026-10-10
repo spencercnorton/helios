@@ -562,7 +562,7 @@ _GOOGLE_PROVIDER_RE = re.compile(r"^(gemini|agy)")
 
 
 def build_google_entries(models: Iterable[GoogleModel]) -> list[ModelEntry]:
-    """Keep exact discovered labels, without guessing entitlement or context."""
+    """Keep exact discovered labels and reasoning efforts, without guessing entitlement or context."""
     entries: list[ModelEntry] = []
     for model in models:
         entries.append(
@@ -572,6 +572,8 @@ def build_google_entries(models: Iterable[GoogleModel]) -> list[ModelEntry]:
                 group="Google",
                 provider=PROVIDER_GOOGLE,
                 description="Antigravity Google-account route · quota checked by CLI",
+                reasoning_efforts=model.reasoning_efforts,
+                default_effort=model.default_effort,
                 is_default=not entries,
             )
         )

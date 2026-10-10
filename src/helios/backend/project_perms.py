@@ -40,7 +40,7 @@ from helios.paths import state_dir
 
 # Provider ids, duplicated from model_catalog as plain strings so the policy
 # table stays import-free (model_catalog must be able to import this module).
-ALL_PROVIDERS = frozenset({"anthropic", "openai", "openrouter"})
+ALL_PROVIDERS = frozenset({"anthropic", "openai", "openrouter", "google"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,7 +117,6 @@ PERMISSION_MODE_DESCRIPTORS: tuple[PermissionMode, ...] = (
         "Stay workspace-scoped and refuse actions requiring escalation.",
         "never",
         "workspace-write",
-        providers=ALL_PROVIDERS | {"google"},
     ),
 )
 
@@ -147,12 +146,19 @@ GLOBAL_DEFAULT_MODES = PERMISSION_MODES
 def permission_description(mode: str, *, provider: str) -> str:
     """Describe the selected runtime's actual approval scope in the picker."""
     if provider == "google":
-        return (
-            "Use the Antigravity terminal sandbox; refuse actions requiring "
-            "interactive approval. Workspace edits remain possible and MCP "
-            "permissions are managed by Antigravity. Use an isolated worktree "
-            "for experiments. Plan and Bypass are unavailable in this adapter."
-        )
+        descriptions = {
+            "default": "Work inside the project in the Antigravity sandbox; ask before broader or unsandboxed access.",
+            "acceptEdits": "Auto-approve trusted edits in the Antigravity sandbox; still review untrusted actions.",
+            "auto": "Use guarded automation in the Antigravity sandbox and prompt only when escalation is needed.",
+            "bypassPermissions": (
+                "Full agentic access with auto-approved tool permissions (--dangerously-skip-permissions). "
+                "HOME as cwd stays read-only regardless."
+            ),
+            "plan": "Read-only investigation with Antigravity plan mode.",
+            "dontAsk": "Stay workspace-scoped in the Antigravity sandbox and refuse actions requiring escalation.",
+        }
+        if mode in descriptions:
+            return descriptions[mode]
     if provider == "openrouter":
         descriptions = {
             "default": "Read project files freely; ask before edits, commands, or external tools. Approval can cover an exact command or one tool for the open session.",
@@ -200,8 +206,6 @@ def effective_provider_mode(provider: str, mode: str) -> str:
     safe_mode = sanitize_global_default(mode)
     if provider_allows_mode(provider, safe_mode):
         return safe_mode
-    if provider == "google":
-        return "dontAsk"
     return SAFE_FALLBACK_MODE
 
 

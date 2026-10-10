@@ -75,6 +75,8 @@ def find_google_binary() -> GoogleBinary:
 class GoogleModel:
     id: str
     label: str
+    reasoning_efforts: tuple[tuple[str, str], ...] = ()
+    default_effort: str = ""
 
 
 @dataclass(slots=True)
@@ -139,21 +141,68 @@ def google_subscription_env() -> dict[str, str]:
 
 
 _MODEL_ID = re.compile(r"gemini-[a-zA-Z0-9][a-zA-Z0-9._-]*\Z")
+_EFFORT_SUFFIX_RE = re.compile(r"-(low|medium|high|xhigh|max)\Z")
+_LABEL_EFFORT_RE = re.compile(r"\s*\((Low|Medium|High|X-High|Max)\)\Z")
+_EFFORT_RANK = {"off": 0, "low": 1, "medium": 2, "high": 3, "xhigh": 4, "max": 5}
 
 
 def parse_model_catalog(output: str) -> tuple[GoogleModel, ...]:
-    """Read the actual agy models tab-separated id/label format."""
-    result: list[GoogleModel] = []
-    seen: set[str] = set()
+    """Read agy models id/label output, collapsing effort variants into base models."""
+    grouped: dict[str, dict] = {}
     for line in output.splitlines():
         parts = line.split("\t", 1)
         if len(parts) != 2:
             continue
         mid, label = (part.strip() for part in parts)
-        if not _MODEL_ID.fullmatch(mid) or not label or mid in seen:
+        if not _MODEL_ID.fullmatch(mid) or not label:
             continue
-        seen.add(mid)
-        result.append(GoogleModel(mid, label))
+        effort_m = _EFFORT_SUFFIX_RE.search(mid)
+        if effort_m:
+            effort_key = effort_m.group(1)
+            base_id = mid[:effort_m.start()]
+            label_m = _LABEL_EFFORT_RE.search(label)
+            if label_m:
+                base_label = label[:label_m.start()].strip()
+                effort_label = label_m.group(1)
+            else:
+                base_label = label
+                effort_label = effort_key.capitalize()
+        else:
+            effort_key = None
+            effort_label = None
+            base_id = mid
+            base_label = label
+
+        if base_id not in grouped:
+            grouped[base_id] = {"label": base_label, "efforts": {}}
+        if effort_key and effort_label:
+            grouped[base_id]["efforts"][effort_key] = effort_label
+
+    result: list[GoogleModel] = []
+    for base_id, data in grouped.items():
+        efforts_dict = data["efforts"]
+        if efforts_dict:
+            sorted_efforts = tuple(
+                sorted(efforts_dict.items(), key=lambda item: _EFFORT_RANK.get(item[0], 99))
+            )
+            effort_keys = {k for k, _ in sorted_efforts}
+            if "high" in effort_keys:
+                default_effort = "high"
+            elif "medium" in effort_keys:
+                default_effort = "medium"
+            else:
+                default_effort = sorted_efforts[-1][0]
+        else:
+            sorted_efforts = ()
+            default_effort = ""
+        result.append(
+            GoogleModel(
+                id=base_id,
+                label=data["label"],
+                reasoning_efforts=sorted_efforts,
+                default_effort=default_effort,
+            )
+        )
     return tuple(result)
 
 

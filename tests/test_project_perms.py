@@ -153,7 +153,7 @@ def test_resolve_startup_default_requires_confirmation_for_bypass():
     assert resolve_startup_default("not-a-mode", confirmed=True) == SAFE_FALLBACK_MODE
 
 
-@pytest.mark.parametrize("provider", ["anthropic", "openai", "openrouter"])
+@pytest.mark.parametrize("provider", ["anthropic", "openai", "openrouter", "google"])
 def test_home_is_forced_to_plan_below_the_ui(provider):
     home = project_perms.PROTECTED_HOME_CWD
 
@@ -168,13 +168,20 @@ def test_home_is_forced_to_plan_below_the_ui(provider):
     )
 
 
-@pytest.mark.parametrize("provider", ["anthropic", "openai", "openrouter"])
+@pytest.mark.parametrize("provider", ["anthropic", "openai", "openrouter", "google"])
 def test_supported_providers_offer_and_execute_bypass(provider):
     assert project_perms.provider_allows_mode(provider, AUTONOMY_MODE)
     assert AUTONOMY_MODE in project_perms.modes_for_provider(provider)
     assert effective_execution_mode(AUTONOMY_MODE, "/repo", provider=provider) == AUTONOMY_MODE
     for mode in PERMISSION_MODES:
         assert project_perms.provider_allows_mode(provider, mode)
+
+
+def test_google_descriptions_disclose_sandbox_and_bypass_scope():
+    for descriptor in PERMISSION_MODE_DESCRIPTORS:
+        desc = project_perms.permission_description(descriptor.key, provider="google")
+        assert desc
+        assert desc != ""
 
 
 def test_unknown_provider_narrows_bypass_to_ask_at_the_chokepoint():

@@ -1,5 +1,14 @@
 # Helios — Session Journal
 
+## 2026-10-10 — gekleos — Google model effort grouping and permissions integration
+
+- **Branch:** `antigravity/google-effort-and-permissions`
+- **What changed:** Google model discovery groups reasoning variants into base models with selectable effort in the execution toolbar; full permission mode selection enabled for Google sessions with corresponding CLI flags.
+- **Validation:** 3,354 tests passed on Apollo; Ruff, compileall, and diff whitespace checks clean.
+- **Release:** 0.101.2 prepared for the pull request and tag-driven release.
+- **Next step:** submit pull request on GitHub and verify CI.
+- **Status file updated:** separate operating record tracks rollout.
+
 ## 2026-10-10 — gekleos — Google subscription transport repair
 
 - **Branch:** `fix/google-subscription-bridge`

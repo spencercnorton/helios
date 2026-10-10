@@ -4,6 +4,13 @@ All notable changes to Helios are documented here. Each release is a
 `vX.Y.Z` tag on `main`; its GitHub Release carries the `.deb`, the tagged
 source (`source.tar.gz`) and `SHA256SUMS.txt`.
 
+## 0.101.2 — 2026-10-10
+
+### Fixed
+
+- Google model selection groups reasoning variants (low, medium, high) into base models with the effort level selected through the execution toolbar instead of displaying separate model dropdown entries.
+- Google sessions support all standard permission modes (Ask, Accept edits, Auto, Bypass, Plan, Never ask) with appropriate CLI flags (`--dangerously-skip-permissions`, `--mode plan`, `--mode accept-edits`, `--sandbox`).
+
 ## 0.101.1 — 2026-10-10
 
 ### Fixed

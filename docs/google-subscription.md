@@ -52,8 +52,8 @@ git worktree add -b trial/google-summary ../project-google-trial HEAD
 ```
 
 In Helios, press `Ctrl+Shift+N`, choose `project-google-trial`, select a
-discovered model under **Google (Gemini)**, and use **Never ask** permissions.
-Google sessions cannot start in your home folder. If the native session is
+discovered model under **Google (Gemini)**, and choose your desired permission mode
+and reasoning effort level. Google sessions cannot start in your home folder. If the native session is
 still initializing when you send, the message remains a draft; send it again
 after startup completes.
 
@@ -84,15 +84,21 @@ It also shares Git history and configured remotes with the original checkout.
 It keeps trial file changes separate, but does not isolate credentials or
 external services. This workflow needs no production access.
 
-## Permission limits
+## Permission modes and effort levels
 
-**Never ask is not a read-only guarantee for Google.** Helios starts the
-native CLI with terminal sandboxing and refuses interactive escalation.
-Tools needing an approval that headless mode cannot obtain are denied by
-the CLI, while workspace file writes can still run. An instruction to
-produce only a plan is also not a security boundary. Google's
-[headless permission documentation](https://antigravity.google/docs/cli/headless/#permissions-in-headless-mode)
-explains that behavior.
+Helios integrates Google models directly with the execution toolbar's effort
+selector and permission picker:
+
+- **Reasoning effort**: Models such as `gemini-3.8-flash` and `gemini-3.1-pro` advertise
+  supported effort levels (e.g. Low, Medium, High). Helios lists the base model in the
+  model catalog and configures effort via the toolbar's reasoning slider rather than
+  separate redundant catalog rows. The selected level is passed to `agy --effort <level>`.
+- **Permission modes**: All standard Helios permission modes are supported:
+  - **Bypass**: Full agentic access via `--dangerously-skip-permissions` (unsandboxed).
+  - **Plan**: Read-only planning mode via `--mode plan --sandbox`.
+  - **Accept edits**: Auto-approve trusted workspace edits via `--mode accept-edits --sandbox`.
+  - **Ask / Auto / Never ask**: Run within the terminal sandbox (`--sandbox`). In headless
+    mode, tools requiring interactive approvals that cannot be granted are denied by the CLI.
 
 The [terminal sandbox](https://antigravity.google/docs/sandbox/) restricts
 terminal execution; native file and MCP tools follow Antigravity's own

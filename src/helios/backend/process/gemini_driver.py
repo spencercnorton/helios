@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import signal
 import subprocess
 import threading
@@ -75,9 +76,15 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
         self._init_user_queue()
         self._cwd = cwd
         self._model = model
+        self._effort = effort
+        m = re.search(r"-(low|medium|high|xhigh|max)\Z", self._model)
+        if m:
+            effort_suffix = m.group(1)
+            self._model = self._model[:m.start()]
+            if not self._effort:
+                self._effort = effort_suffix
         self._permission_mode = effective_execution_mode(permission_mode, cwd, provider=self.provider)
         self._resume_session_id = resume_session_id or ""
-        self._effort = effort
         self._proc: subprocess.Popen[bytes] | None = None
         self._session_id = ""
         self._is_busy = False
@@ -123,19 +130,38 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
     def last_active(self) -> float:
         return self._last_active
 
+    @property
+    def effort_key(self) -> str:
+        return self._effort
+
     def start(self) -> None:
         if not self._model or not self._model.startswith("gemini-"):
             raise GeminiDriverSpawnError("Choose a discovered Google model before starting a session.")
-        if is_home_cwd(self._cwd) or self._permission_mode != "dontAsk":
-            raise GeminiDriverSpawnError("Google headless sessions require a project folder and Never ask mode. Use an isolated worktree for changes.")
+        if is_home_cwd(self._cwd):
+            raise GeminiDriverSpawnError("Google sessions cannot start in your home folder. Choose a project directory.")
         try:
             binary = find_google_binary()
             env = google_subscription_env()
         except (GoogleBinaryNotFound, ValueError) as exc:
             raise GeminiDriverSpawnError(str(exc)) from exc
-        cmd = [str(binary.path), "--input-format", "stream-json", "--output-format", "stream-json", "--model", self._model, "--sandbox"]
+        effort = self._effort or "high"
+        cmd = [
+            str(binary.path),
+            "--input-format", "stream-json",
+            "--output-format", "stream-json",
+            "--model", self._model,
+            "--effort", effort,
+        ]
         if self._resume_session_id:
             cmd.extend(["--conversation", self._resume_session_id])
+        if self._permission_mode == "bypassPermissions":
+            cmd.append("--dangerously-skip-permissions")
+        elif self._permission_mode == "plan":
+            cmd.extend(["--mode", "plan", "--sandbox"])
+        elif self._permission_mode == "acceptEdits":
+            cmd.extend(["--mode", "accept-edits", "--sandbox"])
+        else:
+            cmd.append("--sandbox")
         try:
             self._proc = subprocess.Popen(cmd, cwd=self._cwd, stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
@@ -253,7 +279,12 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
             if self._resume_session_id and sid != self._resume_session_id:
                 self._protocol_failure("Google resumed a different conversation. The requested Work remains blocked.")
                 return False
-            if info.get("permission_mode") != "request-review" or info.get("model") != self._model or os.path.realpath(str(info.get("cwd", ""))) != os.path.realpath(self._cwd):
+            expected_perm = "always-proceed" if self._permission_mode == "bypassPermissions" else "request-review"
+            if (
+                info.get("permission_mode") != expected_perm
+                or info.get("model") != self._model
+                or os.path.realpath(str(info.get("cwd", ""))) != os.path.realpath(self._cwd)
+            ):
                 self._protocol_failure("Google reported an unexpected model, project, or approval policy. The session was stopped.")
                 return False
             self.init_tools = list(info.get("tools") or [])
