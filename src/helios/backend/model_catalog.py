@@ -42,6 +42,7 @@ import re
 import subprocess
 import time
 from dataclasses import dataclass
+from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -51,6 +52,7 @@ from helios.log import get_logger
 
 if TYPE_CHECKING:
     from helios.backend.codex_env import CodexAuth
+    from helios.backend.google_env import GoogleModel
 
 _log = get_logger("models")
 
@@ -554,65 +556,49 @@ def openai_workflow_modes() -> tuple[str, ...]:
     return _OPENAI_WORKFLOW_MODES
 
 
-# ── Google: Antigravity / Gemini subscription catalog ───────────────────────
-
-FALLBACK_GOOGLE_SUBSCRIPTION: tuple[str, ...] = (
-    "gemini-2.5-pro",
-    "gemini-2.5-flash",
-    "gemini-3.6-flash",
-    "gemini-3.8-flash",
-)
+# ── Google: live Antigravity subscription-route catalog ─────────────────────
 
 _GOOGLE_PROVIDER_RE = re.compile(r"^(gemini|agy)")
 
 
-def _google_label(mid: str) -> str:
-    labels = {
-        "gemini-2.5-pro": "Gemini 2.5 Pro (2M context)",
-        "gemini-2.5-flash": "Gemini 2.5 Flash (1M context)",
-        "gemini-3.6-flash": "Gemini 3.6 Flash (1M context)",
-        "gemini-3.8-flash": "Gemini 3.8 Flash (High Speed)",
-    }
-    if mid in labels:
-        return labels[mid]
-    if mid.startswith("gemini-"):
-        parts = mid[7:].split("-")
-        return "Gemini " + " ".join(p.capitalize() for p in parts)
-    return mid
-
-
-def build_google_entries(model_ids: list[str] | tuple[str, ...]) -> list[ModelEntry]:
+def build_google_entries(models: Iterable[GoogleModel]) -> list[ModelEntry]:
+    """Keep exact discovered labels, without guessing entitlement or context."""
     entries: list[ModelEntry] = []
-    for mid in model_ids:
-        is_default = mid == "gemini-2.5-pro"
+    for model in models:
         entries.append(
             ModelEntry(
-                id=mid,
-                label=_google_label(mid),
-                group="Google · Recommended" if is_default else "Google",
+                id=model.id,
+                label=model.label,
+                group="Google",
                 provider=PROVIDER_GOOGLE,
-                description="Google subscription" if not is_default else "Google subscription · 2M context window",
-                is_default=is_default,
+                description="Antigravity Google-account route · quota checked by CLI",
+                is_default=not entries,
             )
         )
     return entries
 
 
-def google_entries(*, force: bool = False, auth=None) -> tuple[list[ModelEntry], str]:
-    """Return Google subscription models and diagnostic source status."""
+def google_entries(*, force: bool = False, auth=None, cached_only: bool = False) -> tuple[list[ModelEntry], str]:
+    """Return live Google rows; account sign-in can remain unverified."""
     from helios.backend import google_env
 
-    del force
-    current_auth = auth if auth is not None else google_env.fetch_auth_status()
-    if not current_auth.ok or not current_auth.logged_in:
-        return [], "not-logged-in"
+    if auth is not None:
+        current_auth = auth
+    elif cached_only:
+        current_auth = google_env.cached_auth_status()
+        if current_auth is None:
+            return [], "discovery-pending"
+    else:
+        current_auth = google_env.fetch_auth_status(force=force)
+    if not current_auth.ok:
+        return [], current_auth.catalog_status
 
-    return build_google_entries(FALLBACK_GOOGLE_SUBSCRIPTION), "subscription"
+    return build_google_entries(current_auth.models), current_auth.catalog_status
 
 
 def preferred_google_model(entries: list[ModelEntry]) -> str:
-    """Best default for Google/Gemini: default entry, or first entry, or 'gemini-2.5-pro'."""
-    return next((entry.id for entry in entries if entry.is_default), entries[0].id if entries else "gemini-2.5-pro")
+    """Use a discovered row, never invent an executable fallback model."""
+    return next((entry.id for entry in entries if entry.is_default), entries[0].id if entries else "")
 
 
 # ── OpenRouter: fetched /models catalog ────────────────────────────────────
@@ -738,9 +724,8 @@ def context_window_for(model_id: str, default_anthropic: str = "") -> int:
 
         return or_catalog.context_length_for(m) or 200_000
     if provider == PROVIDER_GOOGLE:
-        if "2.5-pro" in m:
-            return 2_000_000
-        return 1_000_000
+        # agy models currently reports no context-window metadata.
+        return 0
     if provider == PROVIDER_OPENAI:
         for prefix, window in _OPENAI_WINDOWS:
             if m.startswith(prefix):

@@ -1,17 +1,20 @@
-"""Introspect the local Google / Antigravity environment for Helios.
+"""Discover Antigravity subscription models without enabling API billing.
 
-Everything here inspects the local Google / Gemini / Antigravity agent
-toolchain and credentials. The module is deliberately GTK-free and synchronous —
-callers run these from a worker thread and marshal results back to the main loop.
+The Gemini CLI is a different transport and is not interchangeable with agy.
+These bounded synchronous probes belong on a background worker, never GTK's
+main loop. Catalog availability does not by itself prove account sign-in.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
-from dataclasses import dataclass, field
+import threading
+import time
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from helios.backend.process.env_scrub import scrubbed_child_env
@@ -21,7 +24,11 @@ _log = get_logger("google-env")
 
 
 class GoogleBinaryNotFound(FileNotFoundError):
-    """Neither agy nor gemini CLI binary could be found."""
+    """The Antigravity CLI binary could not be found."""
+
+
+class GoogleSubscriptionRequired(ValueError):
+    """A configured API provider would bypass the subscription route."""
 
 
 @dataclass(slots=True)
@@ -32,19 +39,18 @@ class GoogleBinary:
 
 
 def find_google_binary() -> GoogleBinary:
-    """Locate the agy or gemini CLI binary."""
+    """Locate Antigravity CLI; never substitute the Gemini CLI."""
     env_override = os.environ.get("HELIOS_GOOGLE_BINARY")
     if env_override:
         p = Path(env_override).expanduser()
         if p.is_file() and os.access(p, os.X_OK):
             return GoogleBinary(p, source="$HELIOS_GOOGLE_BINARY")
+        raise GoogleBinaryNotFound("$HELIOS_GOOGLE_BINARY is not an executable file.")
 
     candidates = [
         ("agy", "PATH"),
-        ("gemini", "PATH"),
         (str(Path.home() / ".gemini" / "antigravity" / "bin" / "agy"), "~/.gemini"),
         (str(Path.home() / ".local" / "bin" / "agy"), "~/.local/bin"),
-        (str(Path.home() / ".local" / "bin" / "gemini"), "~/.local/bin"),
         ("/opt/homebrew/bin/agy", "/opt/homebrew/bin"),
         ("/usr/local/bin/agy", "/usr/local/bin"),
     ]
@@ -60,19 +66,29 @@ def find_google_binary() -> GoogleBinary:
             return GoogleBinary(p, source=src)
 
     raise GoogleBinaryNotFound(
-        "Google Antigravity CLI (agy or gemini) not found on PATH. "
+        "Antigravity CLI (agy) not found on PATH. "
         "Install it or set $HELIOS_GOOGLE_BINARY."
     )
 
 
+@dataclass(frozen=True, slots=True)
+class GoogleModel:
+    id: str
+    label: str
+
+
 @dataclass(slots=True)
 class GoogleAuthStatus:
-    """Parsed Google subscription authentication state."""
+    """Observed CLI catalog and account status, without credential contents."""
 
     logged_in: bool
     email: str = ""
-    plan_name: str = ""          # "Google One AI Premium" | "Google Workspace" | "Gemini Pro"
-    auth_method: str = ""        # "oauth" | "adc" | "api_key"
+    plan_name: str = ""
+    auth_method: str = ""
+    binary_path: str = ""
+    models: tuple[GoogleModel, ...] = ()
+    catalog_status: str = "unavailable"
+    auth_warning: str = ""
     error: str = ""
     raw: dict = field(default_factory=dict)
 
@@ -81,62 +97,190 @@ class GoogleAuthStatus:
         return not self.error
 
 
-def fetch_auth_status(timeout: float = 8.0) -> GoogleAuthStatus:
-    """Check the status of the local Google subscription account.
-
-    Never raises — failures return a GoogleAuthStatus with error set.
-    """
-    # 1. Try running `agy auth status --json` or `gemini auth status --json` if binary exists
+def subscription_configuration_error() -> str:
+    """Reject settings that explicitly select an API/custom provider."""
+    path = Path.home() / ".gemini" / "antigravity-cli" / "settings.json"
+    if not path.exists():
+        return ""
     try:
-        bin_info = find_google_binary()
-        proc = subprocess.run(
-            [str(bin_info.path), "auth", "status", "--json"],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            env=scrubbed_child_env(),
+        settings = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "Cannot verify Antigravity settings. Check ~/.gemini/antigravity-cli/settings.json."
+    if not isinstance(settings, dict):
+        return "Antigravity settings must be a JSON object."
+    if "useG1Credits" in settings and settings["useG1Credits"] is not False:
+        return (
+            "Antigravity AI-credit overages are enabled or invalid. "
+            "Turn off AI-credit fallback before using Helios."
         )
-        if proc.returncode == 0 and proc.stdout:
-            try:
-                data = json.loads(proc.stdout.strip())
-                return GoogleAuthStatus(
-                    logged_in=bool(data.get("loggedIn", True)),
-                    email=str(data.get("email") or ""),
-                    plan_name=str(data.get("plan") or data.get("subscriptionType") or "Google Subscription"),
-                    auth_method=str(data.get("authMethod") or "oauth"),
-                    raw=data,
-                )
-            except json.JSONDecodeError:
-                pass
-    except GoogleBinaryNotFound:
-        pass
-    except (subprocess.SubprocessError, OSError):
-        pass
-
-    # 2. Check local Antigravity state directory (~/.gemini/antigravity)
-    antigravity_dir = Path.home() / ".gemini" / "antigravity"
-    if antigravity_dir.is_dir():
-        # Active Antigravity installation on this host
-        return GoogleAuthStatus(
-            logged_in=True,
-            email="spencer (Google Account)",
-            plan_name="Google Subscription",
-            auth_method="oauth",
+    provider = settings.get("modelProvider", "")
+    if not isinstance(provider, str) or provider not in {"", "antigravity"}:
+        return (
+            "Antigravity is configured for an API/custom provider. "
+            "Choose the Antigravity Google-account provider before using Helios."
         )
+    return ""
 
-    # 3. Check for Gemini API key fallback
-    if os.environ.get("GEMINI_API_KEY"):
-        return GoogleAuthStatus(
-            logged_in=True,
-            email="API Key User",
-            plan_name="Gemini API",
-            auth_method="api_key",
-        )
 
-    return GoogleAuthStatus(
-        logged_in=False,
-        error="Not signed in to Google. Run `agy login` or launch sign-in from Settings.",
+def google_subscription_env() -> dict[str, str]:
+    """Return a scrubbed account-only environment, refusing API settings."""
+    error = subscription_configuration_error()
+    if error:
+        raise GoogleSubscriptionRequired(error)
+    env = scrubbed_child_env()
+    for name in tuple(env):
+        upper = name.upper()
+        if upper.startswith((
+            "GEMINI_", "GOOGLE_", "ANTHROPIC_", "OPENAI_", "ANTIGRAVITY_",
+            "CLAUDE_", "CODEX_", "HELIOS_", "CLOUDSDK_", "AGY_",
+        )) or upper == "GCLOUD_PROJECT":
+            del env[name]
+    return env
+
+
+_MODEL_ID = re.compile(r"gemini-[a-zA-Z0-9][a-zA-Z0-9._-]*\Z")
+
+
+def parse_model_catalog(output: str) -> tuple[GoogleModel, ...]:
+    """Read the actual agy models tab-separated id/label format."""
+    result: list[GoogleModel] = []
+    seen: set[str] = set()
+    for line in output.splitlines():
+        parts = line.split("\t", 1)
+        if len(parts) != 2:
+            continue
+        mid, label = (part.strip() for part in parts)
+        if not _MODEL_ID.fullmatch(mid) or not label or mid in seen:
+            continue
+        seen.add(mid)
+        result.append(GoogleModel(mid, label))
+    return tuple(result)
+
+
+def account_quota_verified(output: str) -> bool:
+    """Validate the native /usage envelope without retaining account data."""
+    try:
+        result = json.loads(output)
+    except (ValueError, TypeError):
+        return False
+    if not isinstance(result, dict) or result.get("status") != "SUCCESS":
+        return False
+    command = result.get("command")
+    if not isinstance(command, dict) or command.get("name") != "usage":
+        return False
+    data = command.get("data")
+    if not isinstance(data, dict):
+        return False
+    groups = data.get("groups")
+    return isinstance(groups, list) and any(
+        isinstance(group, dict)
+        and isinstance(group.get("name"), str)
+        and group["name"]
+        and isinstance(group.get("buckets"), list)
+        and group["buckets"]
+        and all(isinstance(bucket, dict) for bucket in group["buckets"])
+        for group in groups
     )
+
+
+_CACHE_SECONDS = 60.0
+_CACHE_LOCK = threading.Lock()
+_AUTH_CACHE: tuple[tuple, float, GoogleAuthStatus] | None = None
+
+
+def _stat_key(path: Path) -> tuple:
+    try:
+        stat = path.stat()
+        return str(path), stat.st_mtime_ns, stat.st_size
+    except OSError:
+        return str(path), None, None
+
+
+def _cache_key(binary: GoogleBinary) -> tuple:
+    return (
+        _stat_key(binary.path),
+        _stat_key(Path.home() / ".gemini" / "antigravity-cli" / "settings.json"),
+        str(Path.home()),
+    )
+
+
+def cached_auth_status() -> GoogleAuthStatus | None:
+    """Return a fresh cached observation without waiting for a worker probe."""
+    if subscription_configuration_error():
+        return None
+    try:
+        key = _cache_key(find_google_binary())
+    except GoogleBinaryNotFound:
+        return None
+    if not _CACHE_LOCK.acquire(blocking=False):
+        return None
+    try:
+        if _AUTH_CACHE and _AUTH_CACHE[0] == key:
+            if time.monotonic() - _AUTH_CACHE[1] < _CACHE_SECONDS:
+                return replace(_AUTH_CACHE[2], raw=dict(_AUTH_CACHE[2].raw))
+        return None
+    finally:
+        _CACHE_LOCK.release()
+
+
+def fetch_auth_status(timeout: float = 8.0, *, force: bool = False) -> GoogleAuthStatus:
+    """Discover live models and account quotas; failures never imply sign-in."""
+    global _AUTH_CACHE
+    try:
+        env = google_subscription_env()
+        binary = find_google_binary()
+    except (GoogleBinaryNotFound, GoogleSubscriptionRequired) as exc:
+        return GoogleAuthStatus(logged_in=False, error=str(exc))
+    key = _cache_key(binary)
+    with _CACHE_LOCK:
+        if not force and _AUTH_CACHE and _AUTH_CACHE[0] == key:
+            if time.monotonic() - _AUTH_CACHE[1] < _CACHE_SECONDS:
+                return replace(_AUTH_CACHE[2], raw=dict(_AUTH_CACHE[2].raw))
+        status = _probe_account(binary, env, timeout)
+        _AUTH_CACHE = key, time.monotonic(), status
+        return replace(status, raw=dict(status.raw))
+
+
+def _probe_account(binary: GoogleBinary, env: dict[str, str], timeout: float) -> GoogleAuthStatus:
+    status = GoogleAuthStatus(
+        logged_in=False,
+        binary_path=str(binary.path),
+        auth_method="oauth-unverified",
+    )
+    deadline = time.monotonic() + timeout
+    try:
+        proc = subprocess.run(
+            [str(binary.path), "models"], capture_output=True, text=True,
+            timeout=timeout, env=env,
+        )
+    except (subprocess.SubprocessError, OSError):
+        status.error = "Antigravity model discovery failed. Check `agy models` in a terminal."
+        return status
+    if proc.returncode:
+        status.error = "Antigravity could not list models. Open `agy` to check account sign-in."
+        return status
+    status.models = parse_model_catalog(proc.stdout)
+    if not status.models:
+        status.error = "Antigravity returned no Google Gemini models."
+        return status
+    status.catalog_status = "agy-models"
+    status.auth_warning = "Account sign-in is not verified. Open `agy` to check sign-in."
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return status
+    try:
+        usage = subprocess.run(
+            [str(binary.path), "--print", "/usage", "--output-format", "json"],
+            capture_output=True, text=True, timeout=remaining, env=env,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return status
+    if usage.returncode == 0 and account_quota_verified(usage.stdout):
+        status.logged_in = True
+        status.auth_method = "oauth-quota"
+        status.plan_name = "Google account (tier not reported)"
+        status.auth_warning = ""
+    return status
 
 
 def list_mcp_servers() -> list[dict[str, str]]:

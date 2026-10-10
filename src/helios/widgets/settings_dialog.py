@@ -196,13 +196,13 @@ class SettingsDialog(Adw.PreferencesDialog):
 
     def _initial_model_choices(self, selected_model: str) -> list[tuple[str, str]]:
         choices = self._entry_pairs(list(model_catalog.FALLBACK_ANTHROPIC))
-        google_entries, _ = model_catalog.google_entries()
+        google_entries, _ = model_catalog.google_entries(cached_only=True)
         if google_entries:
             choices.extend(self._entry_pairs(google_entries))
         if (
             selected_model
             and model_catalog.provider_for(selected_model)
-            != model_catalog.PROVIDER_OPENAI
+            not in {model_catalog.PROVIDER_OPENAI, model_catalog.PROVIDER_GOOGLE}
             and all(model_id != selected_model for model_id, _label in choices)
         ):
             choices.insert(0, (selected_model, selected_model))
@@ -216,9 +216,9 @@ class SettingsDialog(Adw.PreferencesDialog):
         ):
             if (
                 model_catalog.provider_for(self._selected_model_id)
-                == model_catalog.PROVIDER_OPENAI
+                in {model_catalog.PROVIDER_OPENAI, model_catalog.PROVIDER_GOOGLE}
             ):
-                # Never resurrect a persisted GPT id that the authoritative
+                # Never resurrect a persisted native id that the current
                 # catalog did not supply. Select a safe visible row instead.
                 self._selected_model_id = choices[0][0]
             else:
@@ -775,8 +775,8 @@ class SettingsDialog(Adw.PreferencesDialog):
         self._google_group = Adw.PreferencesGroup()
         self._google_group.set_title("Google · Gemini")
         self._google_group.set_description(
-            "Helios drives the Google Antigravity / Gemini CLI (`agy` / `gemini`) "
-            "using your active Google subscription. Models feature 1M and 2M token context windows."
+            "Helios uses Antigravity CLI (`agy`) with your Google account. "
+            "Models come from its live catalog; API-key billing is not used."
         )
         page.add(self._google_group)
 
@@ -784,7 +784,7 @@ class SettingsDialog(Adw.PreferencesDialog):
         refresh_google.add_css_class("flat")
         refresh_google.set_tooltip_text("Re-check Google subscription status")
         refresh_google.set_valign(Gtk.Align.CENTER)
-        refresh_google.connect("clicked", lambda *_: self._reload_google())
+        refresh_google.connect("clicked", lambda *_: self._reload_google(force=True))
         self._google_group.set_header_suffix(refresh_google)
 
         self._google_status_row = Adw.ActionRow()
@@ -802,14 +802,14 @@ class SettingsDialog(Adw.PreferencesDialog):
         self._google_catalog_row.add_prefix(google_cat_icon)
         self._google_group.add(self._google_catalog_row)
 
-    def _reload_google(self) -> None:
+    def _reload_google(self, *, force: bool = False) -> None:
         self._google_status_row.set_title("Checking…")
         self._google_status_row.set_subtitle("")
         self._set_google_icon("content-loading-symbolic", "dim-label")
 
         def work():
             from helios.backend import google_env
-            auth = google_env.fetch_auth_status()
+            auth = google_env.fetch_auth_status(force=force)
             models, status = model_catalog.google_entries(auth=auth)
             return auth, models, status
 
@@ -818,21 +818,35 @@ class SettingsDialog(Adw.PreferencesDialog):
                 return
             auth, models, status = result
             if auth.ok and auth.logged_in:
-                account = auth.email or "Google Subscriber"
-                self._google_status_row.set_title(f"Signed in as {account}")
+                self._google_status_row.set_title(
+                    f"Signed in as {auth.email}" if auth.email else "Google account verified"
+                )
                 self._google_status_row.set_subtitle(
-                    f"Plan: {auth.plan or 'Google Subscription'} · CLI: {auth.binary_path or 'agy'}"
+                    f"Plan: {auth.plan_name or 'Not reported'} · CLI: {auth.binary_path or 'agy'}"
                 )
                 self._set_google_icon("object-select-symbolic", "success")
+            elif auth.ok and models:
+                self._google_status_row.set_title("Sign-in not verified")
+                self._google_status_row.set_subtitle(auth.auth_warning)
+                self._set_google_icon("dialog-warning-symbolic", "warning")
+            else:
+                self._google_status_row.set_title("Google unavailable")
+                self._google_status_row.set_subtitle(
+                    auth.error or "Open `agy` in a terminal to check account sign-in."
+                )
+                self._set_google_icon("dialog-warning-symbolic", "warning")
+
+            if models:
                 self._google_catalog_row.set_subtitle(
-                    f"{len(models)} subscription models active ({', '.join(m.id for m in models[:3])}…)"
+                    f"{len(models)} models discovered by agy ({', '.join(m.id for m in models[:3])})"
                 )
             else:
-                self._google_status_row.set_title("Not signed in")
-                reason = auth.error or "Run `agy login` or `gemini login` in a terminal to authenticate."
-                self._google_status_row.set_subtitle(reason)
-                self._set_google_icon("dialog-warning-symbolic", "warning")
-                self._google_catalog_row.set_subtitle("Subscription required.")
+                self._google_catalog_row.set_subtitle("No verified model catalog available.")
+            other_choices = [
+                choice for choice in self._model_choices
+                if model_catalog.provider_for(choice[0]) != model_catalog.PROVIDER_GOOGLE
+            ]
+            self._set_model_choices(other_choices + self._entry_pairs(models))
 
         self._run_async(work, on_done)
 
@@ -879,7 +893,7 @@ class SettingsDialog(Adw.PreferencesDialog):
             return
         auth, version, anthropic, models, status = result
         selectable_models = SettingsDialog._selectable_openai_models(models, status)
-        google, _ = model_catalog.google_entries()
+        google, _ = model_catalog.google_entries(cached_only=True)
         self._set_model_choices(self._entry_pairs(anthropic + selectable_models + google))
         if not auth.ok and not auth.logged_in:
             self._codex_status_row.set_title("Codex CLI not available")

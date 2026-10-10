@@ -545,8 +545,8 @@ def test_context_windows():
     assert mc.context_window_for("gpt-5.6-sol") == 1_050_000
     assert mc.context_window_for("o4-mini") == 200_000
     assert mc.context_window_for("gpt-4.1") == 1_000_000
-    assert mc.context_window_for("gemini-2.5-pro") == 2_000_000
-    assert mc.context_window_for("gemini-2.5-flash") == 1_000_000
+    assert mc.context_window_for("gemini-2.5-pro") == 0
+    assert mc.context_window_for("gemini-2.5-flash") == 0
 
 
 def test_openrouter_model_selectable_excludes_native_subscription_models():
@@ -563,17 +563,21 @@ def test_openrouter_model_selectable_excludes_native_subscription_models():
 
 
 def test_google_entries_and_preferred(monkeypatch):
-    import types
-    fake_auth_ok = types.SimpleNamespace(ok=True, logged_in=True, email="user@gmail.com")
-    fake_auth_fail = types.SimpleNamespace(ok=False, logged_in=False, email="")
+    from helios.backend.google_env import GoogleAuthStatus, GoogleModel
+    fake_auth_ok = GoogleAuthStatus(
+        logged_in=False,
+        models=(GoogleModel("gemini-3.8-flash-high", "Gemini 3.8 Flash (High)"),),
+        catalog_status="agy-models",
+    )
+    fake_auth_fail = GoogleAuthStatus(logged_in=False, error="CLI unavailable")
 
     entries, status = mc.google_entries(auth=fake_auth_ok)
-    assert status == "subscription"
-    assert len(entries) == 4
-    assert any(e.id == "gemini-2.5-pro" for e in entries)
-    assert mc.preferred_google_model(entries) == "gemini-2.5-pro"
+    assert status == "agy-models"
+    assert len(entries) == 1
+    assert entries[0].label == "Gemini 3.8 Flash (High)"
+    assert mc.preferred_google_model(entries) == "gemini-3.8-flash-high"
 
     entries_fail, status_fail = mc.google_entries(auth=fake_auth_fail)
-    assert status_fail == "not-logged-in"
+    assert status_fail == "unavailable"
     assert entries_fail == []
-    assert mc.preferred_google_model([]) == "gemini-2.5-pro"
+    assert mc.preferred_google_model([]) == ""

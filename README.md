@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>The desktop that sees everything your coding agents do.</strong><br>
-  A native GTK4/libadwaita workbench for Claude Code, OpenAI Codex and OpenRouter models on Linux.
+  A native GTK4/libadwaita workbench for Claude Code, OpenAI Codex, Google Antigravity and OpenRouter models on Linux.
 </p>
 
 <p align="center">
@@ -111,12 +111,16 @@ cost figure there is an estimate, not money. OpenRouter always gets a $5
 allowance per Work and 25 tool rounds per turn (up to 100 while they stay
 productive). A trip stops the work and keeps your draft.
 
-**Three providers, one workbench.** Claude sessions drive the official
+**Four providers, one workbench.** Claude sessions drive the official
 `claude` CLI; GPT sessions bind to a persistent Codex App Server; OpenRouter
 sessions run Helios's own agent loop against any model in the live catalog.
-The two CLIs keep their own sign-in, context files and history; OpenRouter's
+Google sessions use Antigravity CLI (`agy`) with your Google account and models
+discovered from its live catalog. The CLIs keep their own sign-in, context
+files and history; OpenRouter's
 key and history are Helios's own files under `~/.helios` — Helios copies no
-credentials and sends no telemetry.
+credentials and sends no telemetry. Each CLI's own data-use settings still
+apply. See [Google setup and safe trials](docs/google-subscription.md) for
+the current permission limits and account-only routing.
 
 ## Install
 
@@ -178,6 +182,11 @@ separately:
   `codex login --with-api-key` for you. `OPENAI_API_KEY` in the environment is
   not read.
 - **OpenRouter** *(optional)* — an API key, entered in Settings → Providers.
+- **Google Antigravity** *(optional)* — install the official `agy` CLI and
+  sign in by opening `agy` in a terminal. Helios lists the Gemini models
+  reported by `agy models`. Use a project folder and **Never ask** permissions;
+  the terminal sandbox still allows workspace edits. Start in a separate
+  worktree. [Setup and trial workflow](docs/google-subscription.md).
 - **Ollama** *(optional)* — if one answers at `http://localhost:11434`,
   session titles are generated locally (`qwen2.5-coder:14b` by default;
   Settings → Behavior). If Ollama does not answer, the first message is the
@@ -198,6 +207,8 @@ The [user guide](docs/user-guide.md) covers the things the screenshots do not:
   transcripts come from
 - [Permissions](docs/user-guide.md#permissions) — what each mode allows, per
   provider, and the home-folder rule
+- [Google subscription route](docs/google-subscription.md) — Antigravity
+  sign-in, model discovery and a trial workflow that keeps changes reviewable
 - [Budgets](docs/user-guide.md#budgets) — the three breakers and what a trip
   looks like
 - [Works, goals and plans](docs/user-guide.md#works-goals-and-plans)

@@ -53,7 +53,7 @@ from helios.backend.process.message_queue import (
 from helios.backend.process.openrouter_driver import (
     OpenRouterDriver,
 )
-from helios.backend.process.gemini_driver import GeminiCliDriver
+from helios.backend.process.gemini_driver import GeminiCliDriver, GeminiDriverSpawnError
 from helios.backend.process.driver_manager import (
     COMMON_DRIVER_SIGNALS,
     DriverManager,
@@ -2638,7 +2638,8 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             )
         gemini_btn = getattr(self, "_new_gemini_btn", None)
         if gemini_btn is not None:
-            g_entries, _ = model_catalog.google_entries()
+            g_entries = [entry for entry in getattr(self, "_catalog_entries_by_id", {}).values()
+                         if entry.provider == model_catalog.PROVIDER_GOOGLE]
             available = bool(g_entries)
             gemini_btn.set_sensitive(available)
             gemini_btn.set_tooltip_text(
@@ -3077,7 +3078,8 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
                 return remembered
             return model_catalog.preferred_openai_model(self._openai_entries)
         if provider == model_catalog.PROVIDER_GOOGLE:
-            google_entries, _ = model_catalog.google_entries()
+            google_entries = [entry for entry in getattr(self, "_catalog_entries_by_id", {}).values()
+                              if entry.provider == model_catalog.PROVIDER_GOOGLE]
             valid = {e.id for e in google_entries}
             if remembered in valid:
                 return remembered
@@ -4723,6 +4725,10 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
                 handlers.extend(
                     [
                         driver.connect(
+                            "delivery-confirmed",
+                            self._on_provider_delivery_confirmed,
+                        ),
+                        driver.connect(
                             "turn-status-updated", self._on_native_turn_status
                         ),
                         driver.connect("plan-updated", self._on_native_plan_updated),
@@ -4748,7 +4754,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
 
         try:
             self._driver_manager.start_new(make_driver, connect_handlers)
-        except (ClaudeBinaryNotFound, DriverSpawnError) as e:
+        except (ClaudeBinaryNotFound, DriverSpawnError, GeminiDriverSpawnError) as e:
             self._toast(str(e))
             return False
 
