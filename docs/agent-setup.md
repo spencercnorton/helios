@@ -43,7 +43,11 @@ Expected: `ubuntu 26.04 amd64` selects Procedure A; any other output (for exampl
 
 ## 2. Procedure A — APT (Ubuntu 26.04 amd64)
 
-Step A1. Add the repository. `setup.sh` installs the signing key and the suite for the release; it is short, read it first if policy requires. As published, it needs root and `curl` (both checked up front) and `gpg` to verify the key (without `gpg` it stops at `error: signing key fingerprint mismatch`), takes the suite from `VERSION_CODENAME` in `/etc/os-release` and the architecture from `dpkg --print-architecture`, refuses anything but `resolute` on `amd64` before changing the machine, verifies the key fingerprint it was published with, writes `/etc/apt/keyrings/norvi-archive-keyring.asc` and `/etc/apt/sources.list.d/norvi.sources`, and runs `apt-get update` itself.
+Step A1. Add the repository. `setup.sh` installs the signing key and the suite for the release; it is short, read it first if policy requires. The script requires root and `curl`, which it checks before starting. It also needs `gpg` to verify the key; without it, the script stops with `error: signing key fingerprint mismatch`.
+
+It reads `VERSION_CODENAME` from `/etc/os-release` and the architecture from `dpkg --print-architecture`. Before making changes, it rejects any platform other than `resolute` on `amd64`.
+
+It then verifies the published key fingerprint, writes `/etc/apt/keyrings/norvi-archive-keyring.asc` and `/etc/apt/sources.list.d/norvi.sources`, and runs `apt-get update`.
 
 ```bash
 curl -fsSL https://apt.globalentry.systems/setup.sh | sudo sh
@@ -269,7 +273,8 @@ Expected: JSON containing `"loggedIn": true`.
 
 ### 5.2 Codex / GPT (optional)
 
-Resolution: `$HELIOS_CODEX_BINARY`, then `codex` on `PATH`, then `~/.local/bin/codex`. Not found: `OpenAI Codex CLI not found. Install it (`npm install -g --prefix ~/.local @openai/codex`) or set $HELIOS_CODEX_BINARY.` A missing `codex` is silent at startup: the GPT header toggle is simply disabled with the tooltip `Add an OpenAI key in Settings → Providers to enable GPT`.
+Resolution: `$HELIOS_CODEX_BINARY`, then `codex` on `PATH`, then `~/.local/bin/codex`. Not found: ``OpenAI Codex CLI not found. Install it (`npm install -g --prefix
+~/.local @openai/codex`) or set $HELIOS_CODEX_BINARY.`` A missing `codex` is silent at startup: the GPT header toggle is simply disabled with the tooltip `Add an OpenAI key in Settings → Providers to enable GPT`.
 
 Sign-in truth is `codex login status` (15 s timeout, scrubbed environment): signed in means exit 0 and output containing `logged in` but not `not logged in`. Helios never reads `~/.codex/auth.json`.
 
@@ -385,7 +390,11 @@ Per-conversation overrides, nested by provider (`anthropic`, `openai`, `openrout
 
 ### 6.3 The first-chat trap
 
-New-chat working directory at startup: `default_cwd` if it is an existing directory; otherwise the most recently modified local (non-pool) project Helios already knows about whose directory still exists and is not `$HOME`, preferring one that is not a throwaway (`/tmp`, under `/tmp/`, or any `_tmp_*` path component) and using a throwaway only when nothing else qualifies; otherwise `$HOME`. On a fresh install there are no projects, so the first chat opens in `$HOME`, and a chat whose working directory is `$HOME` is forced read-only (`plan`) for every provider: the composer toasts `This chat is in $HOME, so permissions are read only. It can inspect and answer, but pick a project folder to change files.` and any other permission choice is refused with `HOME chats use read-only permissions. Select a project folder before granting file changes.` Only `$HOME` itself is locked, not its subdirectories.
+At startup, Helios chooses the working directory for a new chat in this order:
+
+1. `default_cwd`, if that directory exists.
+2. The most recently modified known local project outside the pool, whose directory still exists and is not `$HOME`. Helios prefers a permanent directory. It uses a throwaway directory (`/tmp`, anything under `/tmp/`, or a path containing a `_tmp_*` component) only when no permanent directory qualifies.
+3. `$HOME`, if neither option qualifies. On a fresh install there are no projects, so the first chat opens in `$HOME`, and a chat whose working directory is `$HOME` is forced read-only (`plan`) for every provider: the composer toasts `This chat is in $HOME, so permissions are read only. It can inspect and answer, but pick a project folder to change files.` and any other permission choice is refused with `HOME chats use read-only permissions. Select a project folder before granting file changes.` Only `$HOME` itself is locked, not its subdirectories.
 
 Set `default_cwd` to a project directory before the first launch. It must exist. A git repository is recommended: Rewind takes a checkpoint before each message only when the folder is inside a git worktree. A repository with no commits yet is enough (`snapshot()` in `src/helios/backend/checkpoints.py` treats an unborn `HEAD` as fine and skips `read-tree`). If the person has no project yet, the 6.1 example already made one (`~/project`, an empty repository) and merged it as `default_cwd`; substitute the person's own project directory there when they have one. Verify:
 

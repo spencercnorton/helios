@@ -4,6 +4,10 @@ All notable changes to Helios are documented here. Each release is a
 `vX.Y.Z` tag on `main`; its GitHub Release carries the `.deb`, the tagged
 source (`source.tar.gz`) and `SHA256SUMS.txt`.
 
+## Unreleased
+
+- Clarify agent setup prerequisites, working-directory fallbacks and error-message formatting.
+
 ## 0.101.4 — 2026-10-10
 
 ### Fixed
