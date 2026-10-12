@@ -53,9 +53,11 @@ git worktree add -b trial/google-summary ../project-google-trial HEAD
 
 In Helios, press `Ctrl+Shift+N`, choose `project-google-trial`, select a
 discovered model under **Google (Gemini)**, and choose your desired permission mode
-and reasoning effort level. Google sessions cannot start in your home folder. If the native session is
-still initializing when you send, the message remains a draft; send it again
-after startup completes.
+and reasoning effort level. Google sessions cannot start in your home folder.
+Your first message waits for native initialization and then sends automatically.
+A second submission during startup stays in the composer as a draft; send it
+after the chat is ready. During an active turn, follow-up messages enter the
+chat's queue and send one at a time after the previous turn finishes.
 
 Give the model a small task with an answer you can check. A useful first
 prompt is:
@@ -95,7 +97,7 @@ selector and permission picker:
   separate redundant catalog rows. The selected level is passed to `agy --effort <level>`.
 - **Permission modes**: All standard Helios permission modes are supported:
   - **Bypass**: Full agentic access via `--dangerously-skip-permissions` (unsandboxed).
-  - **Plan**: Read-only planning mode via `--mode plan --sandbox`.
+  - **Plan**: Native planning mode via `--mode plan --sandbox`.
   - **Accept edits**: Auto-approve trusted workspace edits via `--mode accept-edits --sandbox`.
   - **Ask / Auto / Never ask**: Run within the terminal sandbox (`--sandbox`). In headless
     mode, tools requiring interactive approvals that cannot be granted are denied by the CLI.
@@ -112,7 +114,10 @@ The bridge was verified with Antigravity CLI **1.3.3**, using Google's
 [documented persistent streaming protocol](https://antigravity.google/docs/cli/headless/#stream-prompts-from-stdin).
 Helios checks the native conversation identity, model, working directory
 and approval policy before accepting input. Native result events finish
-turns; a local pipe write or process exit is not proof of completion.
+turns; a local pipe write or process exit is not proof of completion. Helios
+records Google's conversation and input-step identity in the acceptance and
+terminal receipts, and translates native token counters into its accounting
+schema. User and queued-message bubbles wait for Google's acceptance event.
 
 If delivery becomes uncertain, Helios keeps the Work blocked and does not
 automatically replay the prompt. Inspect the native conversation before

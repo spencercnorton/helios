@@ -1,6 +1,7 @@
 # Backend test suite on every pull request, on main, and before every release
-# (release.yml calls it). GTK-free: `gi` is hidden so GTK tests skip; they need
-# a display. No secrets, read-only token, GitHub-owned actions pinned by commit.
+# (release.yml calls it). The backend pass hides GTK; native Google integration
+# tests then run with GTK and Xvfb in the same required check. No secrets,
+# read-only token, GitHub-owned actions pinned by commit.
 name: CI
 on:
   workflow_call:
@@ -29,3 +30,15 @@ jobs:
           # ImportError is a collection error.
           printf 'raise ModuleNotFoundError("gtk hidden in CI")\n' > "$HOME/nogtk/gi.py"
           PYTHONPATH="$HOME/nogtk" python3 -m pytest -q -p no:cacheprovider
+      - name: Install native Google test dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends python3-pytest python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtksource-5 xvfb xauth
+      - name: Google driver and window accounting (native GTK)
+        env:
+          GSK_RENDERER: cairo
+        run: |
+          xvfb-run -a /usr/bin/python3 -m pytest -q -p no:cacheprovider \
+            tests/test_google_env.py tests/test_gemini_driver.py \
+            tests/test_execution_settings_window.py tests/test_driver_signal_contract.py \
+            tests/test_checkpoint_dispatch_window.py

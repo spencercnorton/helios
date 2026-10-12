@@ -8,6 +8,20 @@ source (`source.tar.gz`) and `SHA256SUMS.txt`.
 
 - Clarify agent setup prerequisites, working-directory fallbacks and error-message formatting.
 
+## 0.101.5 — 2026-10-12
+
+- Fix Google sessions getting stuck after native acceptance: retain the native
+  input-step identity in both acceptance and completion receipts, and normalize
+  Google's token counters for durable accounting.
+- Keep Google user and queued-message bubbles provisional until the CLI confirms
+  receipt. Preserve the next draft during initialization instead of launching a
+  competing session.
+- Restore Google's activity-clock contract for idle reaping and LRU eviction,
+  record the effective model and permissions, and avoid cancellation errors when
+  intentionally stopping a completed chat.
+- Run native Google driver, window-accounting and checkpoint regressions with
+  GTK under Xvfb in the required CI check.
+
 ## 0.101.4 — 2026-10-10
 
 ### Fixed

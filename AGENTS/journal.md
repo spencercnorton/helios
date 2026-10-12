@@ -1,5 +1,26 @@
 # Helios — Session Journal
 
+## 2026-10-12 — gekleos — Google native accounting and lifecycle repair
+
+- **Branch:** `codex/google-native-integration`
+- **What changed:** retain native Google input-step identity across acceptance
+  and completion receipts; normalize token counters for the durable Work store;
+  promote direct and queued messages only after native acceptance; preserve a
+  second startup submission as a draft; restore the common activity clock and
+  effective execution properties; suppress expected intentional-stop errors.
+- **Evidence:** a real window reproduced the missing accepted-turn identifier
+  and unsupported usage-field failures, plus a duplicate startup process. The
+  repaired window completed Flash chat/continuity/resume and Pro file-edit,
+  command-validation and queued-follow-up checks using the native subscription
+  CLI. The changed file passed an independent Python check.
+- **Validation:** 3,366 native GTK tests passed, including regressions using
+  the real Work store and window accounting adapters. Ruff, compileall,
+  whitespace and source secret scanning passed. Native Google regressions now
+  run under Xvfb in the required CI check.
+- **Release:** 0.101.5 prepared for GitHub review and tag-driven publication.
+- **Status file updated:** separate private operating record tracks source,
+  installation and running-app activation.
+
 ## 2026-10-10 — gekleos — buffer startup prompts in Google CLI driver
 
 - **Branch:** `antigravity/buffer-google-startup-prompt`
