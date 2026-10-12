@@ -5077,6 +5077,22 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         # dangerous UI lie. Keep the text and ask for a retry after the bounded
         # provider acknowledgement completes.
         drv = self._driver
+        target = getattr(self, "_next_chat", None)
+        if (
+            isinstance(drv, GeminiCliDriver)
+            and drv.is_initializing
+            and target is not None
+            and target.work_id
+            and target.work_id == getattr(drv, "_helios_work_id", "")
+            and canonical_cwd(target.project.cwd) == canonical_cwd(drv.cwd)
+            and self._driver_matches_selected_provider(drv)
+        ):
+            # The first submit already owns this startup/checkpoint. Spawning
+            # another process here replaces the visible driver and invalidates
+            # its pending dispatch before native identity can arrive.
+            GLib.idle_add(self._restore_blocked_execution_send, text)
+            self._toast("Google is preparing this chat — your next message was kept as a draft.")
+            return
         if self._restore_in_flight:
             # The other half of the rewind exclusion. Refusing a restore while
             # a turn runs is only useful if a turn also cannot start while a
@@ -5232,8 +5248,9 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             # result. Staging established non-native sessions too prevents a
             # pre-wire rejection from leaving a false transcript bubble.
             native_pending = isinstance(drv, CodexAppServerDriver)
-            identity_pending = not native_pending and not str(
-                getattr(drv, "session_id", "") or ""
+            identity_pending = not native_pending and (
+                isinstance(drv, GeminiCliDriver)
+                or not str(getattr(drv, "session_id", "") or "")
             )
             if native_pending:
                 self._native_pending_user[id(drv)] = (drv, text)
@@ -5414,6 +5431,8 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         """Promote one quarantined CLI prompt after native provider proof."""
 
         MainWindow._accept_uncertain_pending_user(self, drv)
+        if isinstance(drv, GeminiCliDriver):
+            MainWindow._accept_identity_pending_user(self, drv)
 
     def _append_visible_user_turn(self, text: str) -> None:
         user_turn = Turn(role="user")
@@ -6397,7 +6416,8 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             # the native id, but its bubble/ledger entry stayed provisional.
             # Commit both only after every identity fence above succeeded and
             # Work tagging is available.
-            MainWindow._accept_identity_pending_user(self, drv)
+            if not isinstance(drv, GeminiCliDriver):
+                MainWindow._accept_identity_pending_user(self, drv)
             self._driver_manager.register_started(drv, session_id)
             permission_mode = str(
                 getattr(drv, "permission_mode", "")

@@ -90,11 +90,12 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
         self._is_busy = False
         self._accepting_input = False
         self._stopped = False
-        self._last_active = time.monotonic()
+        self._last_activity = time.monotonic()
         self._streaming: StreamingAssistant | None = None
         self._pending_text = ""
         self._prepared_prompt = None
         self._accepted = False
+        self._accepted_turn_id = ""
         self._accounting_failed = False
         self._stderr = ""
         self._cumulative_usage: dict[str, int] = {}
@@ -116,6 +117,10 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
         return self._is_busy
 
     @property
+    def is_initializing(self) -> bool:
+        return self.is_running and not self._session_id and not self._stopped and not self._accounting_failed
+
+    @property
     def is_accepting_input(self) -> bool:
         return (
             self._accepting_input
@@ -129,12 +134,24 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
         return self._session_id
 
     @property
+    def cwd(self) -> str:
+        return self._cwd
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    @property
+    def permission_mode(self) -> str:
+        return self._permission_mode
+
+    @property
     def live_session_id(self) -> str:
         return self._session_id
 
     @property
-    def last_active(self) -> float:
-        return self._last_active
+    def last_activity(self) -> float:
+        return self._last_activity
 
     @property
     def effort_key(self) -> str:
@@ -220,7 +237,7 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
                 return MessageDelivery("rejected")
             self._startup_pending_text = text
             self._is_busy = True
-            self._last_active = time.monotonic()
+            self._last_activity = time.monotonic()
             return MessageDelivery("pending")
         reason = self._execution_block_reason()
         if reason:
@@ -255,6 +272,7 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
             return MessageDelivery("rejected")
         self._is_busy = True
         self._accepted = False
+        self._accepted_turn_id = ""
         self._pending_text = text
         self._prepared_prompt = prepared
         self._dispatch_step_floor = self._last_step_index
@@ -273,17 +291,18 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
             self.end_input()
             self.emit("error", "Google delivery is uncertain. This Work remains blocked until provider-backed recovery confirms the outcome.")
             return MessageDelivery("uncertain")
-        self._last_active = time.monotonic()
+        self._last_activity = time.monotonic()
         # A pipe write is a local handoff. Native user_input/result events
         # provide acceptance; no synthetic conversation id is emitted.
         return MessageDelivery("accepted")
 
-    def _accept_prompt(self) -> bool:
+    def _accept_prompt(self, native_turn_id: str) -> bool:
         if self._accounting_failed:
             return False
         if self._accepted or not self.execution_attempt_id:
             return self._accepted
         if not self._session_id or not self._record_execution_acceptance(ExecutionAcceptanceEvidence(
+                accepted_turn_id=native_turn_id,
                 provider_request_key=self.execution_attempt_id, native_binding_id=self._session_id)):
             self._hold_accounting_failure("Helios could not record Google acceptance. This Work remains blocked.")
             return False
@@ -293,6 +312,7 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
             self._hold_accounting_failure("Helios could not save the accepted Google prompt. This Work remains blocked.")
             return False
         self._accepted = True
+        self._accepted_turn_id = native_turn_id
         if self._prepared_prompt is not None:
             self._prepared_prompt.mark_sent()
             self._prepared_prompt = None
@@ -300,6 +320,25 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
         self._accept_uncertain_queue_delivery()
         self.emit("delivery-confirmed")
         return True
+
+    def _flush_user_queue(self) -> None:
+        """Keep a written queue head provisional until native acceptance."""
+        if not self._user_queue or not self.is_accepting_input or self._uncertain_queue_delivery is not None:
+            return
+        reason = self._execution_block_reason()
+        if reason:
+            self.emit("error", reason)
+            return
+        delivery = self._user_queue[0]
+        self._queue_dispatch_in_progress = True
+        try:
+            outcome = self.send_user_text(delivery[1])
+        finally:
+            self._queue_dispatch_in_progress = False
+        if outcome.accepted or outcome.uncertain:
+            # Both a successful write and a partial write await the provider's
+            # own receipt. Stop must not restore either as sendable text.
+            self._uncertain_queue_delivery = delivery
 
     def _dispatch_message(self, msg: dict[str, Any]) -> bool:
         if not isinstance(msg, dict):
@@ -335,6 +374,7 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
                 self._hold_accounting_failure("Helios could not save the Google session identity. The session remains blocked.")
                 return False
             self._session_id = sid
+            self._last_activity = time.monotonic()
             self._accepting_input = True
             pending, self._startup_pending_text = self._startup_pending_text, None
             self._is_busy = False
@@ -358,8 +398,11 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
                 # response deltas remain valid within their own active step.
                 return False
             self._last_step_index = index
+            self._last_activity = time.monotonic()
             if kind == "user_input":
-                self._accept_prompt()
+                # Antigravity identifies accepted input by its conversation
+                # and durable step index, rather than a separate turn UUID.
+                self._accept_prompt(f"{self._session_id}/user_input/{index}")
             elif kind == "agent_response":
                 delta = step.get("text_delta")
                 if isinstance(delta, str) and delta and self._streaming is not None:
@@ -392,7 +435,7 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
             # or releasing the first receipt failed. The durable lane stays
             # held until its accounting is repaired separately.
             self._seen_result_turns = count
-            if not self._accept_prompt():
+            if not self._accept_prompt(f"{self._session_id}/result/{count}"):
                 return False
             text = result.get("response")
             if isinstance(text, str) and text:
@@ -416,13 +459,35 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
                             turn_usage[key] = max(0, value - self._cumulative_usage.get(key, 0))
                         self._cumulative_usage[key] = value
             normalized = {**result, "turn_usage": turn_usage, "subtype": "success" if status == "SUCCESS" else "aborted" if status in {"CANCELED", "INTERRUPTED"} else "error"}
-            if not self._finish_execution_from_result(normalized):
+            # The durable store uses provider-neutral names. Keep the native
+            # fields in the display result, and translate only known counters
+            # into the receipt schema (thinking is already part of output).
+            usage_fields = {
+                "input_tokens": "input_tokens",
+                "output_tokens": "output_tokens",
+                "thinking_tokens": "reasoning_output_tokens",
+                "cache_read_tokens": "cache_read_input_tokens",
+                "total_tokens": "total_tokens",
+            }
+            receipt_usage = {usage_fields[key]: value for key, value in turn_usage.items() if key in usage_fields}
+            terminal_status = normalized["subtype"]
+            receipt_status = {"success": "completed", "aborted": "aborted", "error": "failed"}[terminal_status]
+            if not self._finish_execution_with_evidence(ExecutionTerminalEvidence(
+                    evidence_type="provider_terminal",
+                    status=receipt_status,
+                    reason_code="provider_result.failed" if terminal_status == "error" else f"provider_result.{terminal_status}",
+                    provider_status=status,
+                    request_id=self.execution_attempt_id,
+                    turn_id=self._accepted_turn_id,
+                    native_id=self._session_id,
+                    usage=receipt_usage,
+                    queue_disposition="released")):
                 self._hold_accounting_failure("Helios could not finish the Google execution receipt. This Work remains blocked.")
                 return False
             self._is_busy = False
             self._completed_turns = count
             self._streaming = None
-            self._last_active = time.monotonic()
+            self._last_activity = time.monotonic()
             if status != "SUCCESS":
                 detail, _ = scrub_sensitive(str(result.get("error") or status))
                 self.emit("error", detail[:2000])
@@ -519,7 +584,7 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
             self.emit("error", "Google exited without a confirmed terminal receipt. This Work remains blocked; its input will not be replayed.")
         else:
             self._is_busy = False
-        if code and self._stderr:
+        if code and self._stderr and not self._stopped:
             self.emit("error", self._stderr.strip())
         self.emit("exited", code)
         return False

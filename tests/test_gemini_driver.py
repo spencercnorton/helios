@@ -441,6 +441,196 @@ def test_second_init_cannot_rebind_a_running_work(driver_factory):
     assert not any(row[0] == "terminal" for row in driver._test_lifecycle)
 
 
+def test_google_background_idle_reaping_preserves_current_busy_and_recent(driver_factory):
+    manager = DriverManager(max_live=4, idle_seconds=10)
+    idle, current, busy, recent = [driver_factory() for _ in range(4)]
+    for index, driver in enumerate((idle, current, busy, recent)):
+        driver._last_activity = 80.0
+        manager.register_started(driver, f"session-{index}")
+    manager.bind_current(current)
+    busy._is_busy = True
+    recent._last_activity = 95.0
+
+    manager.reap_idle(now=100.0)
+
+    assert not idle.is_accepting_input
+    assert all(d.is_accepting_input for d in (current, busy, recent))
+
+
+def test_google_lru_eviction_uses_the_common_activity_clock(driver_factory):
+    manager = DriverManager(max_live=2, idle_seconds=100)
+    older, newer = driver_factory(), driver_factory()
+    older._last_activity, newer._last_activity = 10.0, 20.0
+    manager.register_started(older, "older")
+    manager.register_started(newer, "newer")
+
+    # Eviction reserves room for the next driver before starting it.
+    manager.evict_for_cap()
+
+    assert not older.is_accepting_input
+    assert newer.is_accepting_input
+
+
+def test_google_identity_and_pipe_write_do_not_promote_a_prompt(driver_factory):
+    from types import SimpleNamespace
+    from helios.backend.conversation_perms import store
+    from helios.main_window import MainWindow
+
+    driver = driver_factory(ready=False)
+    visible = []
+    current = [False]
+    manager = DriverManager(max_live=2, idle_seconds=100)
+    window = SimpleNamespace(
+        _driver_manager=manager,
+        _work_coordinator=None,
+        _conversation_perms=store(),
+        _identity_pending_user={id(driver): (driver, "hello")},
+        _uncertain_pending_user={},
+        _driver_provider=lambda d: d.provider,
+        _drv_is_current=lambda d: current[0],
+        _append_visible_user_turn=visible.append,
+        _destroyed=False,
+    )
+    driver.connect("session-started", lambda d, *args: MainWindow._on_session_started(window, d, *args))
+    driver.connect("delivery-confirmed", lambda d: MainWindow._on_provider_delivery_confirmed(window, d))
+
+    driver._dispatch_message(_init_frame(driver._cwd))
+    assert id(driver) in window._identity_pending_user
+    assert visible == []
+    current[0] = True
+    driver.send_user_text("hello")
+    assert visible == []
+    driver._dispatch_message(_step("user_input", 0))
+    assert visible == ["hello"]
+    assert not window._identity_pending_user
+    driver._dispatch_message(_step("user_input", 0))
+    assert visible == ["hello"]
+
+
+def test_google_startup_retry_preserves_draft_without_another_spawn(driver_factory, monkeypatch):
+    from types import SimpleNamespace
+    from helios.main_window import MainWindow
+
+    driver = driver_factory(ready=False)
+    driver._helios_work_id = "work-google"
+    drafts, notices = [], []
+    window = SimpleNamespace(
+        _driver=driver,
+        _next_chat=SimpleNamespace(work_id="work-google", project=SimpleNamespace(cwd=driver._cwd)),
+        _driver_matches_selected_provider=lambda d: True,
+        _restore_blocked_execution_send=lambda text: (drafts.append(text), False)[1],
+        _toast=notices.append,
+        _ensure_driver=lambda: pytest.fail("A startup retry must not spawn another driver"),
+    )
+    monkeypatch.setattr(MainWindow, "_maybe_dispatch_registered_command", lambda *a: False)
+
+    MainWindow._on_composer_send(window, None, "next message")
+    _drain_main_context()
+
+    assert drafts == ["next message"]
+    assert "preparing" in notices[0]
+    assert driver._test_process.stdin.writes == []
+
+
+def test_google_written_queue_head_waits_for_native_acceptance(driver_factory):
+    driver = driver_factory()
+    sent = []
+    driver.connect("queued-user-sent", lambda d, qid, text: sent.append((qid, text)))
+    qid = driver.queue_user_text("second")
+    driver._flush_user_queue()
+
+    assert sent == []
+    assert driver.queued_messages() == [(qid, "second")]
+    assert driver.take_queued() == []
+    driver._flush_user_queue()
+    assert len(driver._test_process.stdin.writes) == 1
+    driver._dispatch_message(_step("user_input", 0))
+    assert sent == [(qid, "second")]
+    assert driver.queued_messages() == []
+
+
+def test_google_intentional_stop_does_not_report_native_cancel_as_an_error(driver_factory):
+    driver = driver_factory()
+    driver._stderr = "error: stream input cancelled: context canceled"
+    driver.stop()
+    driver._on_exit(1)
+
+    assert driver._test_errors == []
+
+
+def test_google_activity_clock_updates_only_for_dispatched_or_current_activity(driver_factory, monkeypatch):
+    clock = [10.0]
+    monkeypatch.setattr(gd.time, "monotonic", lambda: clock[0])
+    driver = driver_factory()
+    clock[0] = 11.0
+    driver._dispatch_message(_step("agent_response", 1, text_delta="idle event"))
+    assert driver.last_activity == 10.0
+
+    driver.send_user_text("hello")
+    assert driver.last_activity == 11.0
+    clock[0] = 12.0
+    driver._dispatch_message(_step("agent_response", 1, text_delta="answer"))
+    assert driver.last_activity == 12.0
+    clock[0] = 13.0
+    driver._dispatch_message(_step("agent_response", 0, text_delta="stale event"))
+    assert driver.last_activity == 12.0
+    driver._dispatch_message(_result())
+    assert driver.last_activity == 13.0
+
+
+@pytest.mark.parametrize("acceptance_step", [True, False])
+def test_google_receipts_finish_real_work_and_allow_the_next_turn(driver_factory, tmp_path, acceptance_step):
+    from types import SimpleNamespace
+    from helios.backend.work_coordinator import WorkCoordinator, tag_driver
+    from helios.backend.work_store import WorkStore
+    from helios.main_window import MainWindow
+
+    driver = driver_factory()
+    coordinator = WorkCoordinator(WorkStore(tmp_path / "work.db"))
+    work = coordinator.ensure_work(cwd=driver._cwd, lead_provider="google")
+    participant = coordinator.bind_participant(work.work_id, "google", native_id=driver.session_id, model=MODEL)
+    tag_driver(driver, participant)
+    window = SimpleNamespace(_work_coordinator=coordinator)
+    driver.set_execution_attempt_controller(
+        lambda d: MainWindow._start_execution_attempt_for_driver(window, d),
+        lambda *a: pytest.fail("Google requires typed receipts"),
+        record_dispatch=lambda d, aid, e: MainWindow._record_execution_dispatch_for_driver(window, d, aid, e),
+        record_acceptance=lambda d, aid, e: MainWindow._record_execution_acceptance_for_driver(window, d, aid, e),
+        finish_with_evidence=lambda d, aid, e: MainWindow._finish_execution_attempt_with_evidence_for_driver(window, d, aid, e),
+        record_contribution=coordinator.record_turn,
+    )
+    driver.set_prompt_context_provider(lambda d, text: coordinator.prepare_prompt(
+        work_id=work.work_id, provider="google", text=text, goal=None))
+    try:
+        for count in (1, 2):
+            assert driver.send_user_text(f"turn {count}").accepted
+            aid = driver.execution_attempt_id
+            index = (count - 1) * 2
+            if acceptance_step:
+                driver._dispatch_message(_step("user_input", index))
+            driver._dispatch_message(_result(num_turns=count))
+
+            attempt = coordinator.store.get_execution_attempt(aid)
+            assert attempt.status == "completed"
+            assert driver.permission_mode == "dontAsk"
+            assert attempt.metadata["model"] == MODEL
+            suffix = f"user_input/{index}" if acceptance_step else f"result/{count}"
+            assert attempt.accepted_turn_id == f"{NATIVE_ID}/{suffix}"
+            assert attempt.terminal_receipt["turn_id"] == attempt.accepted_turn_id
+            assert attempt.terminal_receipt["request_id"] == aid
+            assert attempt.terminal_receipt["native_id"] == NATIVE_ID
+            assert "thinking_tokens" not in attempt.usage
+            assert "cache_read_tokens" not in attempt.usage
+            if count == 1:
+                assert attempt.usage["reasoning_output_tokens"] == 5
+                assert attempt.usage["cache_read_input_tokens"] == 20
+            assert not coordinator.store.list_active_execution_attempts()
+            assert not driver._test_errors
+            assert driver.execution_attempt_id == ""
+    finally:
+        coordinator.store.close()
+
+
 def test_native_signals_used_by_main_window_connect(driver_factory):
     driver = driver_factory()
     driver.connect("turn-status-updated", lambda *_args: None)
