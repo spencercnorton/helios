@@ -41,6 +41,7 @@ from helios.backend.project_perms import (
 from helios.backend.router_client import RouterClient
 from helios.backend.ui_state import (
     DEFAULT_CWD_KEY,
+    HIDDEN_MODELS_KEY,
     OPENROUTER_PICKER_KEY,
     default_cwd,
     store as ui_state_store,
@@ -212,9 +213,34 @@ class SettingsDialog(Adw.PreferencesDialog):
             choices.insert(0, (selected_model, selected_model))
         return choices
 
+    def _hidden_models(self) -> set[str]:
+        stored = ui_state_store().get(HIDDEN_MODELS_KEY, []) or []
+        return {str(item) for item in stored if isinstance(item, str)}
+
     def _set_model_choices(self, choices: list[tuple[str, str]]) -> None:
         if not choices:
             choices = self._initial_model_choices(self._selected_model_id)
+        # One row per model id, first wins — async provider reloads merge
+        # overlapping lists and used to render the same model twice.
+        seen_ids: set[str] = set()
+        deduped: list[tuple[str, str]] = []
+        for model_id, label in choices:
+            if model_id in seen_ids:
+                continue
+            seen_ids.add(model_id)
+            deduped.append((model_id, label))
+        # The unfiltered master backs the Shown-models list (restore path)
+        # and reload merges; the combo renders the hidden-filtered view.
+        self._all_model_choices = deduped
+        hidden = {
+            str(item)
+            for item in (ui_state_store().get(HIDDEN_MODELS_KEY, []) or [])
+            if isinstance(item, str)
+        }
+        choices = [
+            choice for choice in deduped
+            if choice[0] not in hidden or choice[0] in (self._selected_model_id, "")
+        ] or deduped
         if self._selected_model_id and all(
             model_id != self._selected_model_id for model_id, _label in choices
         ):
@@ -228,6 +254,10 @@ class SettingsDialog(Adw.PreferencesDialog):
             else:
                 choices = [(self._selected_model_id, self._selected_model_id), *choices]
         self._model_choices = choices
+        if hasattr(self, "_hidden_picker_list") and not getattr(
+            self, "_suppress_hidden_refill", False
+        ):
+            self._fill_hidden_picker(getattr(self, "_hidden_query", ""))
         model_model = Gtk.StringList()
         for _key, label in self._model_choices:
             model_model.append(label)
@@ -336,6 +366,10 @@ class SettingsDialog(Adw.PreferencesDialog):
         defaults_group.add(self._perm_row)
 
         self._model_row = Adw.ComboRow()
+        # The combined catalog runs to hundreds of rows; without search the
+        # default-model combo is scroll-only. Guarded for older libadwaita.
+        if hasattr(self._model_row, "set_enable_search"):
+            self._model_row.set_enable_search(True)
         self._model_row.set_title("Model")
         self._model_row.set_subtitle("Loading available models…")
         model_model = Gtk.StringList()
@@ -678,6 +712,7 @@ class SettingsDialog(Adw.PreferencesDialog):
         self._or_group.set_header_suffix(or_refresh)
 
         self._build_or_picker_group(page)
+        self._build_hidden_models_group(page)
 
         # ── OpenRouter · Smart Routing (broker) ──
         self._router_group = Adw.PreferencesGroup()
@@ -905,7 +940,7 @@ class SettingsDialog(Adw.PreferencesDialog):
             else:
                 self._google_catalog_row.set_subtitle("No verified model catalog available.")
             other_choices = [
-                choice for choice in self._model_choices
+                choice for choice in getattr(self, "_all_model_choices", self._model_choices)
                 if model_catalog.provider_for(choice[0]) != model_catalog.PROVIDER_GOOGLE
             ]
             self._set_model_choices(other_choices + self._entry_pairs(models))
@@ -958,7 +993,7 @@ class SettingsDialog(Adw.PreferencesDialog):
             else:
                 self._muse_catalog_row.set_subtitle("No verified model catalog available.")
             other_choices = [
-                choice for choice in self._model_choices
+                choice for choice in getattr(self, "_all_model_choices", self._model_choices)
                 if model_catalog.provider_for(choice[0]) != model_catalog.PROVIDER_MUSE
             ]
             self._set_model_choices(other_choices + self._entry_pairs(selectable))
@@ -1304,6 +1339,116 @@ class SettingsDialog(Adw.PreferencesDialog):
         row.add_prefix(check)
         row.set_activatable_widget(check)
         return row
+
+    def _build_hidden_models_group(self, page: Adw.PreferencesPage) -> None:
+        group = Adw.PreferencesGroup()
+        group.set_title("Model picker · Shown models")
+        group.set_description(
+            "Every model Helios can pick, across all providers. Untick a "
+            "model to hide it from the chat picker and the default-model "
+            "dropdown; tick it again here to bring it back. The currently "
+            "selected model always stays visible."
+        )
+        page.add(group)
+
+        self._hidden_count_row = Adw.ActionRow()
+        self._hidden_count_row.set_title("Shown models")
+        count_icon = Gtk.Image.new_from_icon_name("view-list-symbolic")
+        count_icon.add_css_class("dim-label")
+        self._hidden_count_row.add_prefix(count_icon)
+        show_all = Gtk.Button.new_with_label("Show all")
+        show_all.set_valign(Gtk.Align.CENTER)
+        show_all.connect("clicked", lambda *_: self._set_hidden_models(set()))
+        self._hidden_count_row.add_suffix(show_all)
+        group.add(self._hidden_count_row)
+
+        search_row = Adw.ActionRow()
+        search = Gtk.SearchEntry()
+        search.set_placeholder_text("Filter models…")
+        search.set_hexpand(True)
+        search.connect("search-changed", self._on_hidden_search_changed)
+        search_row.add_prefix(search)
+        group.add(search_row)
+
+        self._hidden_picker_list = Gtk.ListBox()
+        self._hidden_picker_list.set_selection_mode(Gtk.SelectionMode.NONE)
+        self._hidden_picker_list.add_css_class("boxed-list")
+        group.add(self._hidden_picker_list)
+        self._hidden_query = ""
+        self._fill_hidden_picker("")
+
+    def _on_hidden_search_changed(self, entry: Gtk.SearchEntry) -> None:
+        self._hidden_query = entry.get_text() or ""
+        self._fill_hidden_picker(self._hidden_query)
+
+    def _fill_hidden_picker(self, query: str) -> None:
+        child = self._hidden_picker_list.get_first_child()
+        while child is not None:
+            nxt = child.get_next_sibling()
+            self._hidden_picker_list.remove(child)
+            child = nxt
+        hidden = self._hidden_models()
+        all_choices = [
+            choice for choice in getattr(self, "_all_model_choices", self._model_choices)
+            if choice[0]  # the "" Claude-default sentinel is not hideable
+        ]
+        needle = query.strip().lower()
+        matches = [
+            (model_id, label) for model_id, label in all_choices
+            if not needle or needle in label.lower() or needle in model_id.lower()
+        ]
+        shown = len(all_choices) - len(hidden & {m for m, _l in all_choices})
+        self._hidden_count_row.set_subtitle(
+            f"{shown} of {len(all_choices)} models shown in pickers")
+        if not matches:
+            empty = Adw.ActionRow()
+            empty.set_title("No models match")
+            empty.add_css_class("dim-label")
+            self._hidden_picker_list.append(empty)
+            return
+        for model_id, label in matches[:_OR_PICKER_ROW_CAP]:
+            row = Adw.ActionRow()
+            row.set_title(label)
+            row.set_subtitle(model_id)
+            check = Gtk.CheckButton()
+            check.set_active(model_id not in hidden)
+            check.set_valign(Gtk.Align.CENTER)
+            check.connect("toggled", self._on_hidden_toggled, model_id)
+            row.add_prefix(check)
+            row.set_activatable_widget(check)
+            self._hidden_picker_list.append(row)
+        if len(matches) > _OR_PICKER_ROW_CAP:
+            more = Adw.ActionRow()
+            more.set_title(f"…and {len(matches) - _OR_PICKER_ROW_CAP} more")
+            more.set_subtitle("Keep typing to narrow the list.")
+            more.add_css_class("dim-label")
+            self._hidden_picker_list.append(more)
+
+    def _set_hidden_models(self, hidden: set[str]) -> None:
+        ui_state_store().set(HIDDEN_MODELS_KEY, sorted(hidden))
+        # Re-render the default-model combo from the master list at once.
+        self._set_model_choices(list(getattr(self, "_all_model_choices", self._model_choices)))
+
+    def _on_hidden_toggled(self, check: Gtk.CheckButton, model_id: str) -> None:
+        hidden = self._hidden_models()
+        if check.get_active():
+            hidden.discard(model_id)
+        else:
+            hidden.add(model_id)
+        # The emitting check button lives in the list a refill would
+        # destroy mid-signal; update the combo + count only.
+        self._suppress_hidden_refill = True
+        try:
+            self._set_hidden_models(hidden)
+        finally:
+            self._suppress_hidden_refill = False
+        all_choices = [
+            choice for choice in getattr(self, "_all_model_choices", self._model_choices)
+            if choice[0]
+        ]
+        shown = len(all_choices) - len(hidden & {m for m, _l in all_choices})
+        self._hidden_count_row.set_subtitle(
+            f"{shown} of {len(all_choices)} models shown in pickers")
 
     def _on_or_pick_toggled(self, check: Gtk.CheckButton, model_id: str) -> None:
         picked = self._or_picked()

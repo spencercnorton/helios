@@ -1,5 +1,21 @@
 # Helios — Session Journal
 
+## 2026-10-12 — Model picker navigation, duplicates, customization
+
+- **Branch:** `muse/model-picker`
+- **What changed:** shared picker hygiene in `model_catalog` (`dedupe_entries`,
+  `visible_entries`, `collapse_latest_twins`) applied at the window catalog,
+  chat toolbar, and Settings choices; chat picker search is always present
+  (was gated above 25 total rows) with a checkmark on the current model;
+  Settings default-model combo is searchable; new Settings → Providers →
+  Shown models list hides any model from all pickers (selected model exempt,
+  restore by re-ticking, stored as `hidden_models`).
+- **Validation:** ruff clean; GTK-hidden suite 1,891 passed / 90 skipped;
+  picker + Settings tests pass on the GTK lane, including hidden-until-selected
+  rendering. Note: a selected-row `set_icon_name` would have erased the
+  button label — the marker is a `✓` label prefix + CSS class instead.
+- **Release:** 0.103.0 prepared after 0.102.0 (Muse provider) shipped.
+
 ## 2026-10-12 — Muse native provider (MSP)
 
 - **Branch:** `muse/native-provider`

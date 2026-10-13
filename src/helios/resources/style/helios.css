@@ -1365,6 +1365,11 @@ button:hover .helios-execution-plan {
     transition: background-color 200ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.helios-model-popover button.helios-model-selected {
+    background-color: alpha(@accent_color, 0.14);
+    font-weight: 700;
+}
+
 .helios-model-popover button:hover {
     background-color: alpha(@accent_color, 0.10);
 }

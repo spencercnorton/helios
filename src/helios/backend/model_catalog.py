@@ -726,6 +726,71 @@ def openrouter_entries(*, force: bool = False) -> tuple[list[ModelEntry], str]:
     return list(FALLBACK_OPENROUTER), "fallback"
 
 
+# ── Picker hygiene (shared by every model dropdown) ─────────────────────────
+
+
+def dedupe_entries(entries: Iterable[ModelEntry]) -> list[ModelEntry]:
+    """First row per (provider, id) wins; catalog order is preserved.
+
+    Every merge point (window catalog assembly, toolbar choices, Settings
+    choices) routes through here so overlapping sources can never render
+    the same model twice, whatever a future provider returns.
+    """
+    seen: set[tuple[str, str]] = set()
+    unique: list[ModelEntry] = []
+    for entry in entries:
+        key = (entry.provider, entry.id)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(entry)
+    return unique
+
+
+def visible_entries(
+    entries: Iterable[ModelEntry],
+    hidden_ids: Iterable[str],
+    *,
+    keep_id: str = "",
+) -> list[ModelEntry]:
+    """Drop user-hidden models. The selected model (`keep_id`) and the
+    Claude settings-default sentinel ("") always stay — hiding must never
+    strand the current selection."""
+    hidden = {str(item) for item in hidden_ids if isinstance(item, str)}
+    return [
+        entry for entry in entries
+        if entry.id not in hidden or entry.id in (keep_id, "")
+    ]
+
+
+def collapse_latest_twins(
+    entries: list[ModelEntry],
+) -> tuple[list[ModelEntry], list[ModelEntry]]:
+    """Split an Anthropic pool into (first tier, older) with one Latest row
+    per family. `opus[1m]` and `opus` name the same floating model at two
+    context sizes; showing both plus every pinned twin reads as duplicates.
+    The first Latest row per family stays up front, its twins and all pinned
+    versions fold behind the disclosure (still reachable by search)."""
+    current: list[ModelEntry] = []
+    older: list[ModelEntry] = []
+    seen_families: set[str] = set()
+    for entry in entries:
+        if entry.group == "Latest":
+            family = entry.id.removesuffix("[1m]")
+            if family in seen_families:
+                older.append(entry)
+            else:
+                seen_families.add(family)
+                current.append(entry)
+        elif entry.group == "Other":
+            current.append(entry)
+        else:
+            older.append(entry)
+    if not current:
+        return list(entries), []
+    return current, older
+
+
 # ── Cross-provider helpers ─────────────────────────────────────────────────
 
 

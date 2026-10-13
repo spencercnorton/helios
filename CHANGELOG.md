@@ -8,6 +8,16 @@ source (`source.tar.gz`) and `SHA256SUMS.txt`.
 
 - Clarify agent setup prerequisites, working-directory fallbacks and error-message formatting.
 
+## 0.103.0 — 2026-10-12
+
+- Make model selection navigable: the chat picker always shows its search
+  field, the Settings default-model dropdown is searchable, and the current
+  model carries a checkmark in the list. Duplicate rows are removed at every
+  merge point, Anthropic latest aliases collapse to one row per family (the
+  twins and pinned versions stay a disclosure or a search away), and
+  Settings → Providers → Shown models can hide any model from all pickers
+  and bring it back. The selected model is never hidden.
+
 ## 0.102.0 — 2026-10-12
 
 - Add Muse (Meta) as a native provider: Helios drives Muse Code over
