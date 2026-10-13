@@ -298,6 +298,7 @@ def test_chip_style_never_claims_ownership_without_evidence():
         "openrouter": ("OR", "helios-provider-openrouter"),
         "google": ("Gemini", "helios-provider-gemini"),
         "anthropic": ("Claude", "helios-provider-claude"),
+        "muse": ("Muse", "helios-provider-muse"),
     }
     for provider, (label, css) in known.items():
         resolution = providers.ProviderResolution(

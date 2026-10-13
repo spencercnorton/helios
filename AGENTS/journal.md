@@ -1,6 +1,22 @@
 # Helios — Session Journal
 
 
+## 2026-10-13 — muse — Muse parity audit, complementary tests, 0.103.3
+
+- **What changed:** a Muse session running under Helios audited its own
+  parity against Claude/GPT/Gemini, found the canonical checkout was a
+  detached v0.101.5 tree with no Muse provider while `main` (0.103.2)
+  already ships the complete Muse integration, and verified the ported
+  tree byte-identical to `main` for every production file. This change
+  lands only what was genuinely missing upstream: complementary
+  `test_muse_env.py` coverage (provider identity/registry, model routing
+  incl. OpenRouter exclusion, permission-mode parity, fail-closed
+  discovery) and the Muse row in the sidebar-chip test.
+- **Validation:** full suite green in this worktree (see PR); live
+  `muse_env.fetch_auth_status` probe returns `accountLogin` with the
+  4-model `muse-serve` catalog.
+- **Release:** 0.103.3 (patch — tests and release bookkeeping only).
+
 ## 2026-10-13 — claude — Muse Bypass shell + tracker grant (v0.103.2)
 
 - **What changed:** #17 — Bypass spawns `muse serve --disable-sandbox`;
