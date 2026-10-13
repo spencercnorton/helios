@@ -1,5 +1,16 @@
 # Helios — Session Journal
 
+
+## 2026-10-13 — claude — Muse Bypass shell + tracker grant (v0.103.2)
+
+- **What changed:** #17 — Bypass spawns `muse serve --disable-sandbox`;
+  interactive Muse gets `NORVI_TRACKER_ENV` (Infisical stays Claude-only).
+- **Why:** Muse requires bwrap `--ro-bind-symlink` (absent in Ubuntu's
+  0.11.1), falls back to its embedded arm64 bwrap under qemu-user, and
+  AppArmor's `apparmor_restrict_unprivileged_userns` denies the namespace.
+- **Still open:** Apollo MCP import into Muse settings; Ask-mode sandbox on
+  Ubuntu; a native x86_64 Muse binary if one exists.
+
 ## 2026-10-13 — Fix Muse "unsafe provider" send rejection
 
 - **Branch:** `muse/fix-unsafe-provider`

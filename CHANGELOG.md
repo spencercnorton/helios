@@ -8,6 +8,15 @@ source (`source.tar.gz`) and `SHA256SUMS.txt`.
 
 - Clarify agent setup prerequisites, working-directory fallbacks and error-message formatting.
 
+## 0.103.2 — 2026-10-13
+
+- Give Muse a working shell in Bypass: Bypass now starts `muse serve
+  --disable-sandbox`, matching Codex full access. On Ubuntu, Muse rejects
+  stock bubblewrap and its embedded copy is denied a user namespace, so
+  every sandboxed shell call failed. Ask keeps the sandbox; Plan stays
+  read-only. Muse sessions also receive the tracker token like the other
+  interactive providers.
+
 ## 0.103.1 — 2026-10-13
 
 - Fix Muse sessions being rejected as an "unsafe provider identity" on
