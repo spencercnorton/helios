@@ -3430,6 +3430,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
                 model_catalog.PROVIDER_OPENAI,
                 model_catalog.PROVIDER_OPENROUTER,
                 model_catalog.PROVIDER_GOOGLE,
+                model_catalog.PROVIDER_MUSE,
             )
             else ""
         )

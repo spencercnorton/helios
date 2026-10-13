@@ -1,5 +1,22 @@
 # Helios — Session Journal
 
+## 2026-10-13 — Fix Muse "unsafe provider" send rejection
+
+- **Branch:** `muse/fix-unsafe-provider`
+- **Symptom:** on Apollo (0.103.0), Spark 1.2 showed in the picker but every
+  Muse send failed with "Helios rejected an unsafe provider identity";
+  log: `session … came from unknown provider ''`.
+- **Root cause:** `MainWindow._driver_provider` allowlist never learned
+  `muse`, so the identity fence in `_on_session_started` rejected every
+  Muse session. Headless driver probes bypassed the window fence, which
+  is why they passed. Sibling parity gaps fixed in the same change:
+  `work_coordinator.detach_native`, `session_handoff` labels, and the
+  work-store concurrency lanes (`muse: 4`).
+- **Tests:** `test_driver_provider_resolves_muse` +
+  `test_session_started_confirms_muse_runtime_identity` — both fail on
+  0.103.0 code and pass with the fix (stash-proven).
+- **Release:** 0.103.1 patch.
+
 ## 2026-10-12 — Model picker navigation, duplicates, customization
 
 - **Branch:** `muse/model-picker`
