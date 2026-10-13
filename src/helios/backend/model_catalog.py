@@ -68,6 +68,7 @@ KNOWN_FAMILIES: tuple[str, ...] = ("fable", "opus", "sonnet", "haiku")
 PROVIDER_ANTHROPIC = "anthropic"
 PROVIDER_OPENAI = "openai"
 PROVIDER_GOOGLE = "google"
+PROVIDER_MUSE = "muse"
 PROVIDER_OPENROUTER = "openrouter"
 
 #: User-facing provider names for toasts, scope chips, and notifications.
@@ -75,6 +76,7 @@ PROVIDER_LABELS: dict[str, str] = {
     PROVIDER_ANTHROPIC: "Claude",
     PROVIDER_OPENAI: "GPT",
     PROVIDER_GOOGLE: "Gemini",
+    PROVIDER_MUSE: "Muse",
     PROVIDER_OPENROUTER: "OpenRouter",
 }
 
@@ -603,6 +605,59 @@ def preferred_google_model(entries: list[ModelEntry]) -> str:
     return next((entry.id for entry in entries if entry.is_default), entries[0].id if entries else "")
 
 
+# ── Muse: live `muse serve` MSP catalog ────────────────────────────────────
+
+_MUSE_PROVIDER_RE = re.compile(r"^(muse-|muse_)")
+
+# Live-proven windows from `model/list` (2026-10-12, muse 1.4.6). The driver
+# replaces this estimate with `session/contextUsage.windowTokens` at runtime.
+_MUSE_CONTEXT_LIMIT = 1_007_997
+_muse_windows: dict[str, int] = {}
+
+
+def build_muse_entries(models: Iterable) -> list[ModelEntry]:
+    """Keep exact discovered labels and efforts, without guessing entitlement."""
+    entries: list[ModelEntry] = []
+    for model in models:
+        if getattr(model, "context_limit", 0):
+            _muse_windows[model.id] = model.context_limit
+        entries.append(
+            ModelEntry(
+                id=model.id,
+                label=model.label,
+                group="Muse",
+                provider=PROVIDER_MUSE,
+                description="Muse (Meta) native route · sign-in checked by CLI",
+                reasoning_efforts=model.reasoning_efforts,
+                default_effort=model.default_effort,
+                is_default=model.is_default,
+            )
+        )
+    return entries
+
+
+def muse_entries(*, force: bool = False, auth=None, cached_only: bool = False) -> tuple[list[ModelEntry], str]:
+    """Return live Muse rows; only `muse-serve` rows are selectable proof."""
+    from helios.backend import muse_env
+
+    if auth is not None:
+        current_auth = auth
+    elif cached_only:
+        current_auth = muse_env.cached_auth_status()
+        if current_auth is None:
+            return [], "discovery-pending"
+    else:
+        current_auth = muse_env.fetch_auth_status(force=force)
+    if not current_auth.ok:
+        return [], current_auth.catalog_status or "probe-failed"
+    return build_muse_entries(current_auth.models), current_auth.catalog_status
+
+
+def preferred_muse_model(entries: list[ModelEntry]) -> str:
+    """Use a discovered row, never invent an executable fallback model."""
+    return next((entry.id for entry in entries if entry.is_default), entries[0].id if entries else "")
+
+
 # ── OpenRouter: fetched /models catalog ────────────────────────────────────
 
 # Last-known-good rows so the picker is never empty before the first fetch.
@@ -614,7 +669,7 @@ FALLBACK_OPENROUTER: list[ModelEntry] = [
 ]
 
 NATIVE_SUBSCRIPTION_VENDORS: frozenset[str] = frozenset(
-    {"anthropic", "openai", "google", "gemini"}
+    {"anthropic", "openai", "google", "gemini", "meta"}
 )
 
 
@@ -632,7 +687,7 @@ def openrouter_model_selectable(model_id: str) -> bool:
     if vendor_key in NATIVE_SUBSCRIPTION_VENDORS:
         return False
     name_key = name.casefold()
-    if any(p in name_key for p in ("claude-", "gpt-4", "gpt-5", "gemini-")):
+    if any(p in name_key for p in ("claude-", "gpt-4", "gpt-5", "gemini-", "muse-")):
         return False
     return True
 
@@ -682,6 +737,8 @@ def provider_for(model_id: str) -> str:
     or Google naming wins; everything else is Anthropic.
     """
     m = model_id or ""
+    if _MUSE_PROVIDER_RE.match(m):
+        return PROVIDER_MUSE
     if "/" in m:
         return PROVIDER_OPENROUTER
     if _GOOGLE_PROVIDER_RE.match(m):
@@ -725,6 +782,8 @@ def context_window_for(model_id: str, default_anthropic: str = "") -> int:
         from helios.backend.openrouter import catalog as or_catalog
 
         return or_catalog.context_length_for(m) or 200_000
+    if provider == PROVIDER_MUSE:
+        return _muse_windows.get(m, _MUSE_CONTEXT_LIMIT)
     if provider == PROVIDER_GOOGLE:
         # agy models currently reports no context-window metadata.
         return 0

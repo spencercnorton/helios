@@ -173,6 +173,7 @@ class SettingsDialog(Adw.PreferencesDialog):
         self._reload_codex_mcp()
         self._reload_codex()
         self._reload_google()
+        self._reload_muse()
         self._reload_google_mcp()
         self._reload_router()
         self._reload_openrouter()
@@ -199,10 +200,13 @@ class SettingsDialog(Adw.PreferencesDialog):
         google_entries, _ = model_catalog.google_entries(cached_only=True)
         if google_entries:
             choices.extend(self._entry_pairs(google_entries))
+        muse_entries, muse_status = model_catalog.muse_entries(cached_only=True)
+        if muse_entries and muse_status == "muse-serve":
+            choices.extend(self._entry_pairs(muse_entries))
         if (
             selected_model
             and model_catalog.provider_for(selected_model)
-            not in {model_catalog.PROVIDER_OPENAI, model_catalog.PROVIDER_GOOGLE}
+            not in {model_catalog.PROVIDER_OPENAI, model_catalog.PROVIDER_GOOGLE, model_catalog.PROVIDER_MUSE}
             and all(model_id != selected_model for model_id, _label in choices)
         ):
             choices.insert(0, (selected_model, selected_model))
@@ -216,7 +220,7 @@ class SettingsDialog(Adw.PreferencesDialog):
         ):
             if (
                 model_catalog.provider_for(self._selected_model_id)
-                in {model_catalog.PROVIDER_OPENAI, model_catalog.PROVIDER_GOOGLE}
+                in {model_catalog.PROVIDER_OPENAI, model_catalog.PROVIDER_GOOGLE, model_catalog.PROVIDER_MUSE}
             ):
                 # Never resurrect a persisted native id that the current
                 # catalog did not supply. Select a safe visible row instead.
@@ -802,6 +806,64 @@ class SettingsDialog(Adw.PreferencesDialog):
         self._google_catalog_row.add_prefix(google_cat_icon)
         self._google_group.add(self._google_catalog_row)
 
+        self._muse_group = Adw.PreferencesGroup()
+        self._muse_group.set_title("Meta · Muse")
+        self._muse_group.set_description(
+            "Helios drives Muse Code (`muse serve`) with your Meta "
+            "account or API key. Models come from its live catalog; install "
+            "the CLI and sign in with it — Helios keeps no copy of credentials."
+        )
+        page.add(self._muse_group)
+
+        refresh_muse = Gtk.Button.new_from_icon_name("view-refresh-symbolic")
+        refresh_muse.add_css_class("flat")
+        refresh_muse.set_tooltip_text("Re-check Muse status and refresh the model list")
+        refresh_muse.set_valign(Gtk.Align.CENTER)
+        refresh_muse.connect("clicked", lambda *_: self._reload_muse(force=True))
+        self._muse_group.set_header_suffix(refresh_muse)
+
+        self._muse_status_row = Adw.ActionRow()
+        self._muse_status_row.set_title("Checking…")
+        self._muse_icon = Gtk.Image.new_from_icon_name("content-loading-symbolic")
+        self._muse_icon.add_css_class("dim-label")
+        self._muse_status_row.add_prefix(self._muse_icon)
+        self._muse_group.add(self._muse_status_row)
+
+        self._muse_catalog_row = Adw.ActionRow()
+        self._muse_catalog_row.set_title("Model catalog")
+        self._muse_catalog_row.set_subtitle("Loading Muse models…")
+        muse_cat_icon = Gtk.Image.new_from_icon_name("view-list-symbolic")
+        muse_cat_icon.add_css_class("dim-label")
+        self._muse_catalog_row.add_prefix(muse_cat_icon)
+        self._muse_group.add(self._muse_catalog_row)
+
+        self._muse_auth_row = Adw.ActionRow()
+        self._muse_auth_row.set_title("Sign in")
+        self._muse_auth_row.set_subtitle("Authenticate with your Meta account.")
+        self._muse_auth_btn = Gtk.Button.new_with_label("Sign in…")
+        self._muse_auth_btn.add_css_class("suggested-action")
+        self._muse_auth_btn.set_valign(Gtk.Align.CENTER)
+        self._muse_auth_btn.connect("clicked", self._on_muse_auth_action)
+        self._muse_auth_row.add_suffix(self._muse_auth_btn)
+        self._muse_group.add(self._muse_auth_row)
+
+        self._muse_key_row = Adw.PasswordEntryRow()
+        self._muse_key_row.set_title("Use or replace a Meta API key")
+        self._muse_key_row.set_show_apply_button(True)
+        self._muse_key_row.connect("apply", self._on_muse_key_apply)
+        self._muse_group.add(self._muse_key_row)
+
+        muse_key_hint = Adw.ActionRow()
+        muse_key_hint.set_title("How this is stored")
+        muse_key_hint.set_subtitle(
+            "The key goes to `muse auth set` on stdin and is stored by the "
+            "Muse CLI — Helios keeps no copy. A Meta-account sign-in works "
+            "directly; an API key is optional. `META_API_KEY` in the "
+            "environment always takes precedence."
+        )
+        muse_key_hint.add_css_class("dim-label")
+        self._muse_group.add(muse_key_hint)
+
     def _reload_google(self, *, force: bool = False) -> None:
         self._google_status_row.set_title("Checking…")
         self._google_status_row.set_subtitle("")
@@ -850,6 +912,97 @@ class SettingsDialog(Adw.PreferencesDialog):
 
         self._run_async(work, on_done)
 
+    def _reload_muse(self, *, force: bool = False) -> None:
+        self._muse_status_row.set_title("Checking…")
+        self._muse_status_row.set_subtitle("")
+        self._set_muse_icon("content-loading-symbolic", "dim-label")
+
+        def work():
+            from helios.backend import muse_env
+            from helios.backend.muse_binary import muse_version
+            auth = muse_env.fetch_auth_status(force=force)
+            models, status = model_catalog.muse_entries(auth=auth)
+            return auth, models, status, muse_version()
+
+        def on_done(result):
+            if self._closed or isinstance(result, Exception):
+                return
+            auth, models, status, version = result
+            selectable = list(models) if status == "muse-serve" else []
+            if auth.ok and auth.logged_in:
+                method = {"accountLogin": "Meta account", "apiKey": "API key",
+                          "envKey": "META_API_KEY"}.get(auth.state, auth.state)
+                self._muse_status_row.set_title(
+                    f"Signed in as {auth.label}" if auth.label and "@" in auth.label
+                    else "Muse account verified")
+                bits = [method] if method else []
+                if version:
+                    bits.append(f"CLI {version}")
+                self._muse_status_row.set_subtitle(" · ".join(bits) or "Signed in")
+                self._set_muse_icon("object-select-symbolic", "success")
+            elif auth.ok:
+                self._muse_status_row.set_title("Not signed in")
+                self._muse_status_row.set_subtitle(
+                    "Use “Sign in” below, or paste a Meta API key.")
+                self._set_muse_icon("dialog-warning-symbolic", "warning")
+            else:
+                self._muse_status_row.set_title("Muse unavailable")
+                self._muse_status_row.set_subtitle(
+                    auth.error or "Install Muse Code, then tap refresh.")
+                self._set_muse_icon("dialog-warning-symbolic", "warning")
+            self._set_muse_auth_mode(auth.ok and auth.logged_in)
+            if selectable:
+                self._muse_catalog_row.set_subtitle(
+                    f"{len(selectable)} models discovered by muse serve "
+                    f"({', '.join(m.id for m in selectable[:3])})")
+            else:
+                self._muse_catalog_row.set_subtitle("No verified model catalog available.")
+            other_choices = [
+                choice for choice in self._model_choices
+                if model_catalog.provider_for(choice[0]) != model_catalog.PROVIDER_MUSE
+            ]
+            self._set_model_choices(other_choices + self._entry_pairs(selectable))
+
+        self._run_async(work, on_done)
+
+    def _set_muse_icon(self, icon_name: str, css: str) -> None:
+        self._muse_icon.set_from_icon_name(icon_name)
+        for c in ("success", "warning", "error", "dim-label"):
+            self._muse_icon.remove_css_class(c)
+        self._muse_icon.add_css_class(css)
+
+    def _set_muse_auth_mode(self, logged_in: bool) -> None:
+        self._muse_logged_in = logged_in
+        for css in ("suggested-action", "destructive-action"):
+            self._muse_auth_btn.remove_css_class(css)
+        if logged_in:
+            self._muse_auth_row.set_title("Sign out")
+            self._muse_auth_row.set_subtitle("Sign out of your Meta account.")
+            self._muse_auth_btn.set_label("Sign out")
+            self._muse_auth_btn.add_css_class("destructive-action")
+        else:
+            self._muse_auth_row.set_title("Sign in")
+            self._muse_auth_row.set_subtitle("Authenticate with your Meta account.")
+            self._muse_auth_btn.set_label("Sign in…")
+            self._muse_auth_btn.add_css_class("suggested-action")
+
+    def _on_muse_auth_action(self, *_args) -> None:
+        from helios.backend import muse_env
+        if getattr(self, "_muse_logged_in", False):
+            ok, msg = muse_env.launch_logout()
+        else:
+            ok, msg = muse_env.launch_login()
+        self._muse_group.set_description(f"{msg} Then tap refresh ↻." if ok else msg)
+
+    def _on_muse_key_apply(self, *_args) -> None:
+        from helios.backend import muse_env
+        key = self._muse_key_row.get_text()
+        self._muse_key_row.set_text("")
+        ok, msg = muse_env.set_api_key(key)
+        self._muse_status_row.set_subtitle(msg)
+        if ok:
+            self._reload_muse(force=True)
+
     def _set_google_icon(self, icon_name: str, css: str) -> None:
         self._google_icon.set_from_icon_name(icon_name)
         for c in ("success", "warning", "error", "dim-label"):
@@ -894,7 +1047,9 @@ class SettingsDialog(Adw.PreferencesDialog):
         auth, version, anthropic, models, status = result
         selectable_models = SettingsDialog._selectable_openai_models(models, status)
         google, _ = model_catalog.google_entries(cached_only=True)
-        self._set_model_choices(self._entry_pairs(anthropic + selectable_models + google))
+        muse_rows, muse_status = model_catalog.muse_entries(cached_only=True)
+        muse_selectable = muse_rows if muse_status == "muse-serve" else []
+        self._set_model_choices(self._entry_pairs(anthropic + selectable_models + google + muse_selectable))
         if not auth.ok and not auth.logged_in:
             self._codex_status_row.set_title("Codex CLI not available")
             self._codex_status_row.set_subtitle(auth.detail)

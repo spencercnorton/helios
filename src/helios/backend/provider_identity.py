@@ -32,6 +32,7 @@ __all__ = [
     "GOOGLE_NATIVE",
     "IdentityValidationError",
     "LOCAL_WORKER",
+    "MUSE_NATIVE",
     "ModelRef",
     "NativeBindingKind",
     "OPENAI_NATIVE",
@@ -39,6 +40,7 @@ __all__ = [
     "PROVIDER_ANTHROPIC",
     "PROVIDER_GOOGLE",
     "PROVIDER_LOCAL",
+    "PROVIDER_MUSE",
     "PROVIDER_OPENAI",
     "PROVIDER_OPENROUTER",
     "ProviderDescriptor",
@@ -54,6 +56,7 @@ SCHEMA_VERSION = 1
 PROVIDER_ANTHROPIC = "anthropic"
 PROVIDER_OPENAI = "openai"
 PROVIDER_GOOGLE = "google"
+PROVIDER_MUSE = "muse"
 PROVIDER_OPENROUTER = "openrouter"
 PROVIDER_LOCAL = "local"
 
@@ -711,6 +714,20 @@ GOOGLE_NATIVE = ProviderDescriptor(
     supports_delegated_worker=False,
 )
 
+MUSE_NATIVE = ProviderDescriptor(
+    provider_id=PROVIDER_MUSE,
+    display_name="Muse",
+    runtime_kind=RuntimeKind.NATIVE,
+    credential_owner=CredentialOwner.NATIVE_RUNTIME,
+    catalog_source="muse-serve",
+    driver_factory_key="muse-serve",
+    capability_discovery_key="muse-serve",
+    transcript_kind="helios-muse-jsonl",
+    native_binding_kind=NativeBindingKind.SESSION,
+    supports_primary_driver=True,
+    supports_delegated_worker=False,
+)
+
 OPENROUTER_GATEWAY = ProviderDescriptor(
     provider_id=PROVIDER_OPENROUTER,
     display_name="OpenRouter",
@@ -744,6 +761,7 @@ DEFAULT_PROVIDER_REGISTRY = ProviderRegistry(
         ANTHROPIC_NATIVE,
         OPENAI_NATIVE,
         GOOGLE_NATIVE,
+        MUSE_NATIVE,
         OPENROUTER_GATEWAY,
         LOCAL_WORKER,
     )

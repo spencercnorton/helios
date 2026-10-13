@@ -54,6 +54,7 @@ from helios.backend.process.openrouter_driver import (
     OpenRouterDriver,
 )
 from helios.backend.process.gemini_driver import GeminiCliDriver, GeminiDriverSpawnError
+from helios.backend.process.muse_driver import MuseDriverSpawnError, MuseServeDriver
 from helios.backend.process.driver_manager import (
     COMMON_DRIVER_SIGNALS,
     DriverManager,
@@ -542,6 +543,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             model_catalog.PROVIDER_ANTHROPIC,
             model_catalog.PROVIDER_OPENAI,
             model_catalog.PROVIDER_GOOGLE,
+            model_catalog.PROVIDER_MUSE,
             model_catalog.PROVIDER_OPENROUTER,
         ):
             remembered = self._ui_state.get(f"model_{prov}", None)
@@ -1126,6 +1128,20 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
                 )
             except Exception as e:  # noqa: BLE001
                 _log.warning("Google model catalog refresh failed: %s", e)
+            # Muse (Meta) native catalog. Only live-proven rows enter the
+            # picker: without a working `muse serve` probe there is nothing
+            # honest to select, exactly like the OpenAI app-server rule.
+            try:
+                m_entries, m_status = model_catalog.muse_entries(force=force)
+                if m_entries and m_status == "muse-serve":
+                    entries = entries + m_entries
+                _log.info(
+                    "model catalog: %d entries (muse: %s)",
+                    len(entries),
+                    m_status,
+                )
+            except Exception as e:  # noqa: BLE001
+                _log.warning("Muse model catalog refresh failed: %s", e)
             GLib.idle_add(
                 self._apply_model_catalog,
                 entries,
@@ -2843,7 +2859,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
                 default_effort=entry.default_effort,
                 selected_effort=selected_effort,
             )
-        elif provider in (model_catalog.PROVIDER_OPENAI, model_catalog.PROVIDER_GOOGLE):
+        elif provider in (model_catalog.PROVIDER_OPENAI, model_catalog.PROVIDER_GOOGLE, model_catalog.PROVIDER_MUSE):
             entry = self._catalog_entries_by_id.get(execution_model)
             if entry is None:
                 self._chat_toolbar.set_effort_sensitive(False)
@@ -3084,6 +3100,13 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             if remembered in valid:
                 return remembered
             return model_catalog.preferred_google_model(google_entries)
+        if provider == model_catalog.PROVIDER_MUSE:
+            muse_entries = [entry for entry in getattr(self, "_catalog_entries_by_id", {}).values()
+                            if entry.provider == model_catalog.PROVIDER_MUSE]
+            valid = {e.id for e in muse_entries}
+            if remembered in valid:
+                return remembered
+            return model_catalog.preferred_muse_model(muse_entries)
         if provider == model_catalog.PROVIDER_OPENROUTER:
             if model_catalog.openrouter_model_selectable(remembered):
                 return remembered
@@ -3143,6 +3166,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             model_catalog.PROVIDER_OPENAI,
             model_catalog.PROVIDER_OPENROUTER,
             model_catalog.PROVIDER_GOOGLE,
+            model_catalog.PROVIDER_MUSE,
         ):
             return
         if provider == self._selected_provider():
@@ -3429,6 +3453,8 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             return "OpenRouter"
         if provider == model_catalog.PROVIDER_GOOGLE:
             return "Google"
+        if provider == model_catalog.PROVIDER_MUSE:
+            return "Muse"
         return "Claude"
 
     def _sync_assistant_labels(self) -> None:
@@ -3870,9 +3896,10 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             label = {
                 model_catalog.PROVIDER_OPENAI: "OpenAI",
                 model_catalog.PROVIDER_GOOGLE: "Google",
+                model_catalog.PROVIDER_MUSE: "Muse",
                 model_catalog.PROVIDER_OPENROUTER: "OpenRouter",
             }.get(provider, "Claude")
-            action = "sign in" if provider == model_catalog.PROVIDER_GOOGLE else "add a key"
+            action = "sign in" if provider in (model_catalog.PROVIDER_GOOGLE, model_catalog.PROVIDER_MUSE) else "add a key"
             self._toast(f"No {label} models available — {action} in Settings → Providers.")
             self._sync_provider_toggle()
             return
@@ -4490,6 +4517,8 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             driver_cls = OpenRouterDriver
         elif _provider == model_catalog.PROVIDER_GOOGLE:
             driver_cls = GeminiCliDriver
+        elif _provider == model_catalog.PROVIDER_MUSE:
+            driver_cls = MuseServeDriver
         else:
             driver_cls = ClaudeCliDriver
 
@@ -4509,6 +4538,8 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             elif driver_cls is CodexAppServerDriver and spawn_effort_key:
                 effort_kw["effort"] = spawn_effort_key
             elif driver_cls is GeminiCliDriver and spawn_effort_key:
+                effort_kw["effort"] = spawn_effort_key
+            elif driver_cls is MuseServeDriver and spawn_effort_key:
                 effort_kw["effort"] = spawn_effort_key
             elif spawn_effort_key:
                 effort_kw["effort"] = spawn_effort_key
@@ -4747,9 +4778,33 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
                         ),
                     ]
                 )
+            if isinstance(driver, MuseServeDriver):
+                # Same native handlers as Gemini/Codex: the driver emits the
+                # same payload shapes, so animations need no provider branch.
+                handlers.extend(
+                    [
+                        driver.connect(
+                            "delivery-confirmed",
+                            self._on_provider_delivery_confirmed,
+                        ),
+                        driver.connect(
+                            "turn-status-updated", self._on_native_turn_status
+                        ),
+                        driver.connect("plan-updated", self._on_native_plan_updated),
+                        driver.connect(
+                            "activity-updated", self._on_native_activity_updated
+                        ),
+                        driver.connect(
+                            "agents-updated", self._on_native_agents_updated
+                        ),
+                        driver.connect(
+                            "context-compacted", self._on_context_compacted
+                        ),
+                    ]
+                )
             if isinstance(
                 driver,
-                (ClaudeCliDriver, CodexAppServerDriver, OpenRouterDriver, GeminiCliDriver),
+                (ClaudeCliDriver, CodexAppServerDriver, OpenRouterDriver, GeminiCliDriver, MuseServeDriver),
             ):
                 handlers.append(
                     driver.connect("budget-exhausted", self._on_budget_exhausted)
@@ -4758,7 +4813,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
 
         try:
             self._driver_manager.start_new(make_driver, connect_handlers)
-        except (ClaudeBinaryNotFound, DriverSpawnError, GeminiDriverSpawnError) as e:
+        except (ClaudeBinaryNotFound, DriverSpawnError, GeminiDriverSpawnError, MuseDriverSpawnError) as e:
             self._toast(str(e))
             return False
 
@@ -4853,6 +4908,8 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             provider = model_catalog.PROVIDER_ANTHROPIC
         elif isinstance(driver, GeminiCliDriver):
             provider = model_catalog.PROVIDER_GOOGLE
+        elif isinstance(driver, MuseServeDriver):
+            provider = model_catalog.PROVIDER_MUSE
         else:
             return None
         scope = AgentActivityScope(
@@ -5079,7 +5136,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         drv = self._driver
         target = getattr(self, "_next_chat", None)
         if (
-            isinstance(drv, GeminiCliDriver)
+            isinstance(drv, (GeminiCliDriver, MuseServeDriver))
             and drv.is_initializing
             and target is not None
             and target.work_id
@@ -5249,7 +5306,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             # pre-wire rejection from leaving a false transcript bubble.
             native_pending = isinstance(drv, CodexAppServerDriver)
             identity_pending = not native_pending and (
-                isinstance(drv, GeminiCliDriver)
+                isinstance(drv, (GeminiCliDriver, MuseServeDriver))
                 or not str(getattr(drv, "session_id", "") or "")
             )
             if native_pending:
@@ -5431,7 +5488,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         """Promote one quarantined CLI prompt after native provider proof."""
 
         MainWindow._accept_uncertain_pending_user(self, drv)
-        if isinstance(drv, GeminiCliDriver):
+        if isinstance(drv, (GeminiCliDriver, MuseServeDriver)):
             MainWindow._accept_identity_pending_user(self, drv)
 
     def _append_visible_user_turn(self, text: str) -> None:
@@ -6321,6 +6378,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             model_catalog.PROVIDER_OPENAI,
             model_catalog.PROVIDER_OPENROUTER,
             model_catalog.PROVIDER_GOOGLE,
+            model_catalog.PROVIDER_MUSE,
         ):
             MainWindow._reject_started_identity(
                 self,
@@ -6416,7 +6474,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             # the native id, but its bubble/ledger entry stayed provisional.
             # Commit both only after every identity fence above succeeded and
             # Work tagging is available.
-            if not isinstance(drv, GeminiCliDriver):
+            if not isinstance(drv, (GeminiCliDriver, MuseServeDriver)):
                 MainWindow._accept_identity_pending_user(self, drv)
             self._driver_manager.register_started(drv, session_id)
             permission_mode = str(
@@ -6488,6 +6546,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             elif provider not in (
                 model_catalog.PROVIDER_OPENROUTER,
                 model_catalog.PROVIDER_GOOGLE,
+                model_catalog.PROVIDER_MUSE,
             ):
                 claude_env.save_init_snapshot(drv.init_tools, drv.init_mcp_servers)
         except Exception:

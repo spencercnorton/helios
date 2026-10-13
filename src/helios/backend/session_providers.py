@@ -39,12 +39,14 @@ _KNOWN_PROVIDERS = frozenset(
         model_catalog.PROVIDER_ANTHROPIC,
         model_catalog.PROVIDER_OPENAI,
         model_catalog.PROVIDER_GOOGLE,
+        model_catalog.PROVIDER_MUSE,
         model_catalog.PROVIDER_OPENROUTER,
     }
 )
 _CODEX_MIRROR_VERSION = "helios-codex"
 _OPENROUTER_MIRROR_VERSION = "helios-openrouter"
 _GEMINI_MIRROR_VERSION = "helios-gemini"
+_MUSE_MIRROR_VERSION = "helios-muse"
 _CLAUDE_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
 
 
@@ -161,6 +163,8 @@ def _provider_from_transcript(
                     providers.add(model_catalog.PROVIDER_OPENROUTER)
                 elif version == _GEMINI_MIRROR_VERSION:
                     providers.add(model_catalog.PROVIDER_GOOGLE)
+                elif version == _MUSE_MIRROR_VERSION:
+                    providers.add(model_catalog.PROVIDER_MUSE)
                 elif (
                     isinstance(version, str)
                     and _CLAUDE_VERSION_RE.fullmatch(version.strip()) is not None
@@ -274,6 +278,8 @@ def chip_style(resolution: ProviderResolution | None) -> tuple[str, str, str]:
             return ("Gemini", "helios-provider-gemini", "Gemini (Google) session")
         if resolution.provider == model_catalog.PROVIDER_OPENROUTER:
             return ("OR", "helios-provider-openrouter", "OpenRouter session")
+        if resolution.provider == model_catalog.PROVIDER_MUSE:
+            return ("Muse", "helios-provider-muse", "Muse (Meta) session")
         if resolution.provider == model_catalog.PROVIDER_ANTHROPIC:
             return ("Claude", "helios-provider-claude", "Claude (Anthropic) session")
         # Explicit, not a fallthrough. `known` only means the provider is in

@@ -238,6 +238,19 @@ class ClaudeAgentActivityAdapter:
         return tuple(observations)
 
 
+class MuseAgentActivityAdapter(ClaudeAgentActivityAdapter):
+    """Normalize the Muse driver's keyed subagent/workflow actors.
+
+    The Muse driver already emits the same ``{actor_id: {status, name,
+    role, message}}`` snapshot shape as the Claude driver, keyed on the MSP
+    item id whose own ``item/completed`` record is the terminal evidence —
+    so only the provider routing differs. Reminder children are excluded by
+    the driver: they are host housekeeping, not delegated work.
+    """
+
+    provider = "muse"
+
+
 class AgentActivityModel:
     """Turn-scoped actor model with stale-scope and status regression fences."""
 
@@ -253,6 +266,7 @@ class AgentActivityModel:
             else (
                 CodexAgentActivityAdapter(),
                 ClaudeAgentActivityAdapter(),
+                MuseAgentActivityAdapter(),
             )
         )
         self._adapters = {adapter.provider: adapter for adapter in selected}

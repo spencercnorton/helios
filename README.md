@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>The desktop that sees everything your coding agents do.</strong><br>
-  A native GTK4/libadwaita workbench for Claude Code, OpenAI Codex, Google Antigravity and OpenRouter models on Linux.
+  A native GTK4/libadwaita workbench for Claude Code, OpenAI Codex, Google Antigravity, Muse Code and OpenRouter models on Linux.
 </p>
 
 <p align="center">
@@ -111,11 +111,13 @@ cost figure there is an estimate, not money. OpenRouter always gets a $5
 allowance per Work and 25 tool rounds per turn (up to 100 while they stay
 productive). A trip stops the work and keeps your draft.
 
-**Four providers, one workbench.** Claude sessions drive the official
+**Five providers, one workbench.** Claude sessions drive the official
 `claude` CLI; GPT sessions bind to a persistent Codex App Server; OpenRouter
 sessions run Helios's own agent loop against any model in the live catalog.
 Google sessions use Antigravity CLI (`agy`) with your Google account and models
-discovered from its live catalog. The CLIs keep their own sign-in, context
+discovered from its live catalog. Muse sessions drive Muse Code over
+`muse serve` (MSP) with your Meta account or API key, including its subagent
+and workflow activity in the same dock as the other native providers. The CLIs keep their own sign-in, context
 files and history; OpenRouter's
 key and history are Helios's own files under `~/.helios` — Helios copies no
 credentials and sends no telemetry. Each CLI's own data-use settings still
@@ -187,6 +189,11 @@ separately:
   reported by `agy models`. Use a project folder and **Never ask** permissions;
   the terminal sandbox still allows workspace edits. Start in a separate
   worktree. [Setup and trial workflow](docs/google-subscription.md).
+- **Muse (Meta)** *(optional)* — the `muse` CLI (Muse Code), signed in
+  with `muse login`, or paste a Meta API key in Settings → Providers, which
+  runs `muse auth set` for you. Found via `$HELIOS_MUSE_BINARY`, then
+  `PATH`, then `~/.local/bin/muse`. `META_API_KEY` in the environment takes
+  precedence over the stored account login.
 - **Ollama** *(optional)* — if one answers at `http://localhost:11434`,
   session titles are generated locally (`qwen2.5-coder:14b` by default;
   Settings → Behavior). If Ollama does not answer, the first message is the

@@ -39,6 +39,6 @@ jobs:
           GSK_RENDERER: cairo
         run: |
           xvfb-run -a /usr/bin/python3 -m pytest -q -p no:cacheprovider \
-            tests/test_google_env.py tests/test_gemini_driver.py \
+            tests/test_google_env.py tests/test_gemini_driver.py tests/test_muse_driver.py \
             tests/test_execution_settings_window.py tests/test_driver_signal_contract.py \
             tests/test_checkpoint_dispatch_window.py

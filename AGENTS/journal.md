@@ -1,5 +1,28 @@
 # Helios — Session Journal
 
+## 2026-10-12 — Muse native provider (MSP)
+
+- **Branch:** `muse/native-provider`
+- **What changed:** new `muse` native provider driving `muse serve` (MSP v1):
+  binary discovery (`HELIOS_MUSE_BINARY` > PATH > `~/.local/bin`), account and
+  catalog probes via `account/read` + `model/list`, MSP driver with streaming,
+  tool cards, subagent/workflow dock parity, approvals and user-input through
+  the existing question dialog, durable execution receipts and transcript
+  mirroring (`helios-muse`), Settings → Providers group with terminal sign-in
+  and stdin-only API-key storage, and live-proven-only model selection.
+- **Evidence:** live `muse serve --provider meta` probes proved the catalog
+  (wonder/spark, 1,007,997 context), experimental `account/read` states, and a
+  full driver turn (`pong`, success receipt with real token usage) on macOS.
+- **Validation:** ruff clean; full GTK-hidden suite 1,891 passed / 90 skipped;
+  native driver + signal-contract tests passed; new `test_muse_env.py` and
+  `test_muse_driver.py` cover catalog parsing, fail-closed auth, tool
+  normalization, agent lifecycle, and approval decisions.
+- **Release:** 0.102.0 prepared for GitHub review and tag-driven publication.
+- **Known gaps:** GTK visuals not exercised on Ubuntu from this host; Linux
+  `muse` binary availability for apt users is detect-only (install guidance
+  shown when missing); OpenRouter high-context and broader Settings work from
+  the same review remain follow-up releases.
+
 ## 2026-10-12 — gekleos — Google native accounting and lifecycle repair
 
 - **Branch:** `codex/google-native-integration`

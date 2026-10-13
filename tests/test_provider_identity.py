@@ -12,6 +12,7 @@ from helios.backend.provider_identity import (
     DEFAULT_PROVIDER_REGISTRY,
     GOOGLE_NATIVE,
     LOCAL_WORKER,
+    MUSE_NATIVE,
     OPENAI_NATIVE,
     OPENROUTER_GATEWAY,
     CredentialOwner,
@@ -46,6 +47,10 @@ def test_builtin_registry_has_native_gateway_and_local_identities():
     assert ANTHROPIC_NATIVE.provider_id == model_catalog.PROVIDER_ANTHROPIC
     assert OPENAI_NATIVE.provider_id == model_catalog.PROVIDER_OPENAI
     assert GOOGLE_NATIVE.provider_id == model_catalog.PROVIDER_GOOGLE
+    assert MUSE_NATIVE.provider_id == model_catalog.PROVIDER_MUSE
+    assert MUSE_NATIVE.runtime_kind is RuntimeKind.NATIVE
+    assert MUSE_NATIVE.credential_owner is CredentialOwner.NATIVE_RUNTIME
+    assert MUSE_NATIVE.native_binding_kind is NativeBindingKind.SESSION
     assert ANTHROPIC_NATIVE.runtime_kind is RuntimeKind.NATIVE
     assert GOOGLE_NATIVE.runtime_kind is RuntimeKind.NATIVE
     assert GOOGLE_NATIVE.native_binding_kind is NativeBindingKind.SESSION
@@ -58,6 +63,7 @@ def test_builtin_registry_has_native_gateway_and_local_identities():
         "anthropic",
         "google",
         "local",
+        "muse",
         "openai",
         "openrouter",
     ]
