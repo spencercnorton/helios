@@ -88,15 +88,14 @@ def _accent_rgb(is_dark: bool) -> tuple[float, float, float]:
     rgba = to_standalone(sm.get_accent_color(), bool(is_dark))
     return (rgba.red, rgba.green, rgba.blue)
 
-# Above this many models the picker grows a search field. The
-# OpenRouter catalog is several hundred entries; Claude and GPT alone
-# are a handful, where a filter box would be clutter.
-_MODEL_SEARCH_THRESHOLD = 25
+# The picker always carries a search field: with five providers signed in
+# even the native catalogs together run to dozens of rows, and typing to
+# filter is the only navigation that scales. (It used to appear only above
+# 25 total rows, which hid it exactly on smaller multi-provider setups.)
 
-# Anthropic groups that hold the aliases you actually want to pick — the ones
-# that always mean "newest of this family". Everything else the binary scan
-# finds is a pinned older version, which belongs behind the disclosure.
-_ANTHROPIC_CURRENT_GROUPS = ("Latest", "Other")
+# Anthropic first-tier splitting lives in
+# model_catalog.collapse_latest_twins: one Latest row per family up front,
+# its [1m]/bare twin and every pinned version behind the disclosure.
 
 # A provider whose catalog is already curated (Codex App Server returns a
 # handful of agent models) shows this many rows before the rest fold away.
@@ -382,7 +381,7 @@ class ChatToolbar(Gtk.Box):
         still accepts it; the label just falls back to the raw id)."""
         if self._destroyed or not entries:
             return
-        self._choices = list(entries)
+        self._choices = model_catalog.dedupe_entries(entries)
         self._build_model_popover()
         self.set_model(self._model_alias)
 
@@ -1406,28 +1405,21 @@ class ChatToolbar(Gtk.Box):
         self._fill_model_rows(box, popover, "")
         scroller.set_child(box)
 
-        # A search field appears only when the list is long enough to need one.
-        # The OpenRouter catalog is several hundred models; scrolling that many
-        # buttons in a 380px viewport is not a picker, it is a haystack. Claude
-        # and GPT alone are a handful of rows, where a search box is clutter.
-        # Counted over the visible provider only — a big OpenRouter catalog
-        # used to grow a search box on the Claude list too.
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        if len(self._choices) > _MODEL_SEARCH_THRESHOLD:
-            search = Gtk.SearchEntry()
-            search.set_placeholder_text("Filter models…")
-            search.set_margin_top(6)
-            search.set_margin_start(6)
-            search.set_margin_end(6)
-            search.set_margin_bottom(2)
-            search.connect(
-                "search-changed",
-                lambda entry: self._fill_model_rows(
-                    box, popover, entry.get_text() or ""
-                ),
-            )
-            outer.append(search)
-            popover.connect("show", lambda *_a: (search.set_text(""), search.grab_focus()))
+        search = Gtk.SearchEntry()
+        search.set_placeholder_text("Filter models…")
+        search.set_margin_top(6)
+        search.set_margin_start(6)
+        search.set_margin_end(6)
+        search.set_margin_bottom(2)
+        search.connect(
+            "search-changed",
+            lambda entry: self._fill_model_rows(
+                box, popover, entry.get_text() or ""
+            ),
+        )
+        outer.append(search)
+        popover.connect("show", lambda *_a: (search.set_text(""), search.grab_focus()))
         outer.append(scroller)
         popover.set_child(outer)
         self._model_btn.set_popover(popover)
@@ -1450,8 +1442,7 @@ class ChatToolbar(Gtk.Box):
         """Split into "the ones you actually pick" and "everything older"."""
         target_provider = provider or getattr(self, "_provider_filter", model_catalog.PROVIDER_ANTHROPIC)
         if target_provider == model_catalog.PROVIDER_ANTHROPIC:
-            current = [e for e in pool if e.group in _ANTHROPIC_CURRENT_GROUPS]
-            older = [e for e in pool if e.group not in _ANTHROPIC_CURRENT_GROUPS]
+            current, older = model_catalog.collapse_latest_twins(pool)
         elif target_provider == model_catalog.PROVIDER_OPENROUTER:
             chosen = set(ui_state.store().get(ui_state.OPENROUTER_PICKER_KEY, []) or [])
             current = [e for e in pool if e.id in chosen]
@@ -1472,10 +1463,16 @@ class ChatToolbar(Gtk.Box):
             box.remove(child)
             child = nxt
 
+        # Hidden models (Settings → Shown models) never render here; read
+        # the store fresh so a Settings change applies on the next open
+        # without any refresh plumbing. The selected model always stays.
+        hidden = ui_state.store().get(ui_state.HIDDEN_MODELS_KEY, []) or []
+        choices = model_catalog.visible_entries(
+            self._choices, hidden, keep_id=self._model_alias)
         needle = query.strip().lower()
         if needle:
             pool = [
-                e for e in self._choices
+                e for e in choices
                 if needle in e.id.lower()
                 or needle in e.label.lower()
                 or needle in (e.group or "").lower()
@@ -1496,17 +1493,19 @@ class ChatToolbar(Gtk.Box):
             model_catalog.PROVIDER_ANTHROPIC,
             model_catalog.PROVIDER_OPENAI,
             model_catalog.PROVIDER_GOOGLE,
+            model_catalog.PROVIDER_MUSE,
             model_catalog.PROVIDER_OPENROUTER,
         ]
         provider_titles = {
             model_catalog.PROVIDER_ANTHROPIC: "Claude (Anthropic)",
             model_catalog.PROVIDER_OPENAI: "OpenAI (Codex)",
             model_catalog.PROVIDER_GOOGLE: "Google (Gemini)",
+            model_catalog.PROVIDER_MUSE: "Muse (Meta)",
             model_catalog.PROVIDER_OPENROUTER: "OpenRouter",
         }
 
         seen_providers = set(provider_order)
-        for e in self._choices:
+        for e in choices:
             p = getattr(e, "provider", model_catalog.PROVIDER_ANTHROPIC)
             if p not in seen_providers:
                 provider_order.append(p)
@@ -1515,7 +1514,7 @@ class ChatToolbar(Gtk.Box):
         first_section = True
         for p in provider_order:
             p_entries = [
-                e for e in self._choices
+                e for e in choices
                 if getattr(e, "provider", model_catalog.PROVIDER_ANTHROPIC) == p
             ]
             if not p_entries:
@@ -1570,8 +1569,16 @@ class ChatToolbar(Gtk.Box):
                 box.append(header)
                 last_group = group
 
+            selected = alias == self._model_alias
+            if selected:
+                # Without a marker the current model is indistinguishable
+                # in a long list — the main navigation complaint. A label
+                # prefix, not set_icon_name: the icon replaces the text.
+                label = f"✓ {label}"
             btn = Gtk.Button(label=label)
             btn.add_css_class("flat")
+            if selected:
+                btn.add_css_class("helios-model-selected")
             btn.set_has_frame(False)
             btn.set_halign(Gtk.Align.FILL)
             btn.set_size_request(220, -1)

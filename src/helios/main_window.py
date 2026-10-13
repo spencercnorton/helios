@@ -1212,6 +1212,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
                 or entry in self._openai_entries
             )
         ]
+        selectable = model_catalog.dedupe_entries(selectable)
         self._chat_toolbar.set_choices(selectable)
         self._catalog_entries_by_id = {entry.id: entry for entry in selectable}
         self._normalize_openai_model_memory()

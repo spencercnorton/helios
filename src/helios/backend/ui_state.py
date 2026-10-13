@@ -32,6 +32,12 @@ _LOCK = Lock()
 # configured, in which case the picker shows the catalog unfiltered.
 OPENROUTER_PICKER_KEY = "openrouter_picker_models"
 
+# Model ids the user hid in Settings → Providers → Shown models. Hidden models
+# disappear from every picker (chat + Settings default) except the model
+# already selected there; the Settings list itself always shows everything so
+# a hide is one untick away from restored. Empty list = show the full catalog.
+HIDDEN_MODELS_KEY = "hidden_models"
+
 
 def _load(path: Path) -> dict[str, Any]:
     if not path.is_file():

@@ -192,6 +192,41 @@ def test_refresh_does_not_reinsert_unverified_selected_gpt_model():
     assert fake._selected_model_id == "fable"
 
 
+def test_model_choices_dedupe_and_hide(monkeypatch):
+    class ModelRow:
+        def set_model(self, model):
+            self.model = model
+
+        def set_selected(self, selected):
+            self.selected = selected
+
+        def set_subtitle(self, subtitle):
+            self.subtitle = subtitle
+
+    fake = types.SimpleNamespace(
+        _selected_model_id="fable",
+        _model_choices=[],
+        _model_row=ModelRow(),
+    )
+    apply = types.MethodType(SettingsDialog._set_model_choices, fake)
+    apply([("fable", "Fable"), ("fable", "Fable AGAIN"), ("muse-wonder-1.0", "Muse")])
+    assert fake._model_choices == [("fable", "Fable"), ("muse-wonder-1.0", "Muse")]
+    assert fake._all_model_choices == fake._model_choices
+
+    from helios.backend import ui_state
+
+    store = ui_state.store()
+    previous = store.get(ui_state.HIDDEN_MODELS_KEY, [])
+    try:
+        store.set(ui_state.HIDDEN_MODELS_KEY, ["muse-wonder-1.0"])
+        apply(list(fake._all_model_choices))
+        # Hidden from the combo, still restorable from the master list.
+        assert fake._model_choices == [("fable", "Fable")]
+        assert ("muse-wonder-1.0", "Muse") in fake._all_model_choices
+    finally:
+        store.set(ui_state.HIDDEN_MODELS_KEY, previous)
+
+
 def test_entry_pairs_keep_ids_and_labels():
     entries = [
         model_catalog.ModelEntry("model-a", "Model A", "Group"),
