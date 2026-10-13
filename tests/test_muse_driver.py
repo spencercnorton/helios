@@ -164,3 +164,13 @@ def test_translate_answers_shapes():
     assert _translate_answers(prompt, None) is None
     assert _translate_answers({"questions": [{"id": "q", "selection": {"mode": "single"}}]}, "B") == [
         {"questionId": "q", "selectedLabel": "B"}]
+
+
+def test_serve_args_follow_permission_mode():
+    from helios.backend.process.muse_driver import MUSE_INTERACTIVE_ENV, serve_args
+
+    assert "--disable-sandbox" in serve_args("muse-x", "bypassPermissions")
+    assert "--disable-sandbox" not in serve_args("muse-x", "default")
+    plan = serve_args("muse-x", "plan")
+    assert "--disable-shell" in plan and "--disable-sandbox" not in plan
+    assert {"META_API_KEY", "NORVI_TRACKER_API_TOKEN"} <= MUSE_INTERACTIVE_ENV
