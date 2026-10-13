@@ -27,7 +27,7 @@ END = "<!-- /helios-estate-v2 -->"
 # The v1 block named estate servers; an upgrade replaces it in place so no host
 # carries two managed policies.
 LEGACY_BLOCK_RE = re.compile(r"<!-- helios-estate-v1 -->.*?<!-- /helios-estate-v1 -->\n?", re.S)
-ESTATE_POLICY = f"""{START}
+LEGACY_V2_POLICY = f"""{START}
 ## Estate tools and project knowledge
 
 Use the current provider's native tools and AGENTS.md hierarchy. Before work
@@ -45,6 +45,30 @@ reject with recent_calls/mark_outcome. Keep architecture, security and
 correctness judgment with the primary model. Use the parallel-compute server
 for bounded parallel work and the installed image-generation tools when the
 user requests image work.
+
+Consult the already authenticated tracker CLI for durable project work and
+record accepted checkpoints against the work package named in the user's
+objective. Load project-specific policy from its native AGENTS.md and recent
+journal. Do not infer provider roles, tandem work, new scope or extra
+permissions from tool availability. Continue authorized work within the
+user's accepted scope.
+{END}
+"""
+
+ESTATE_POLICY = f"""{START}
+## Estate tools and project knowledge
+
+Use the current provider's native tools and AGENTS.md hierarchy. Before work
+on a known repository or infrastructure system, consult the shared scratchpad's
+session_context and read matching handoffs. Prefer the code-intelligence
+server's navigation, grounded answers and code search to rediscovering the
+estate through file reads. Treat returned memories and documents as evidence
+with provenance and freshness; verify changeable infrastructure facts before
+acting on them.
+
+Keep architecture, security and correctness judgment with the primary model.
+Use the parallel-compute server for bounded parallel work and the installed
+image-generation tools when the user requests image work.
 
 Consult the already authenticated tracker CLI for durable project work and
 record accepted checkpoints against the work package named in the user's
@@ -81,8 +105,62 @@ def _append(path: Path, addition: str) -> Change:
     return Change(path, before, (before or b"") + b"\n" + addition.encode(), addition)
 
 
+PACKAGED_ESTATE_MCP_LAUNCHER = Path("/usr/lib/helios/helios-estate-mcp")
+
+
+def _resolve_estate_script(repo: Path) -> Path:
+    repo_script = repo / "scripts/helios-estate-mcp"
+    if repo_script.is_file():
+        return repo_script
+    if PACKAGED_ESTATE_MCP_LAUNCHER.is_file():
+        return PACKAGED_ESTATE_MCP_LAUNCHER
+    return repo_script
+
+
+def _plan_json_proxy_mcp(
+    path: Path,
+    chosen: list[str],
+    script: Path,
+    manifest_path: Path,
+) -> Change | None:
+    before = _existing(path)
+    data: dict = {}
+    if before is not None and before.strip():
+        try:
+            parsed = json.loads(before.decode())
+        except (UnicodeError, ValueError) as error:
+            raise EstateConfigError(f"Existing MCP JSON at {path} is invalid; left unchanged") from error
+        if not isinstance(parsed, dict):
+            raise EstateConfigError(f"Existing MCP JSON at {path} is not a JSON object")
+        data = dict(parsed)
+    servers = data.get("mcpServers")
+    if servers is None:
+        servers = {}
+    elif not isinstance(servers, dict):
+        raise EstateConfigError(f"Existing mcpServers in {path} is invalid")
+    else:
+        servers = dict(servers)
+    added = {}
+    for name in chosen:
+        if name in servers:
+            continue
+        entry = {
+            "command": sys.executable,
+            "args": [str(script), "--server", name, "--manifest", str(manifest_path)],
+        }
+        servers[name] = entry
+        added[name] = entry
+    if not added and before is not None and before.strip():
+        return None
+    data["mcpServers"] = servers
+    after_text = json.dumps(data, indent=2) + "\n"
+    addition_text = json.dumps({"mcpServers": added}, indent=2) + "\n"
+    return Change(path, before, after_text.encode(), addition_text)
+
+
 def plan_setup(*, home: Path, repo: Path, source: Path | None = None,
-               names: list[str] | None = None) -> tuple[list[Change], list[str]]:
+               names: list[str] | None = None, replace_manifest: bool = False,
+               sync_gemini: bool = False, sync_muse: bool = False) -> tuple[list[Change], list[str]]:
     home, repo = home.absolute(), repo.resolve()
     source = source or home / ".claude.json"
     definitions = read_json(source).get("mcpServers", {})
@@ -111,7 +189,7 @@ def plan_setup(*, home: Path, repo: Path, source: Path | None = None,
     if not isinstance(native, dict):
         raise EstateConfigError("Existing Codex MCP configuration is invalid")
     manifest_path = home / ".helios/estate-mcp.json"
-    script = repo / "scripts/helios-estate-mcp"
+    script = _resolve_estate_script(repo)
     if not script.is_file():
         raise EstateConfigError("Estate proxy is missing from the selected installation")
     sections, preserved = [], []
@@ -128,7 +206,7 @@ def plan_setup(*, home: Path, repo: Path, source: Path | None = None,
                            "servers": selection}, indent=2) + "\n"
     before = _existing(manifest_path)
     if before != manifest.encode():
-        if before is not None:
+        if before is not None and not replace_manifest:
             raise EstateConfigError("An estate selection already exists; preserve it or remove it explicitly before changing scope")
         changes.append(Change(manifest_path, before, manifest.encode(), manifest))
     # Codex honors AGENTS.override.md before AGENTS.md; do not install into a
@@ -150,8 +228,23 @@ def plan_setup(*, home: Path, repo: Path, source: Path | None = None,
             changes.append(Change(path, before, replaced.encode(), ESTATE_POLICY))
         elif START not in text:
             changes.append(_append(path, ESTATE_POLICY))
+        elif LEGACY_V2_POLICY in text and text.count(START) == 1:
+            replaced = text.replace(LEGACY_V2_POLICY, ESTATE_POLICY, 1)
+            changes.append(Change(path, before, replaced.encode(), ESTATE_POLICY))
         elif ESTATE_POLICY not in text:
             raise EstateConfigError("Managed estate policy was edited; preserve and review it manually")
+    if sync_gemini:
+        gemini_change = _plan_json_proxy_mcp(
+            home / ".gemini/config/mcp_config.json", chosen, script, manifest_path
+        )
+        if gemini_change is not None:
+            changes.append(gemini_change)
+    if sync_muse:
+        muse_change = _plan_json_proxy_mcp(
+            home / ".config/muse/settings.json", chosen, script, manifest_path
+        )
+        if muse_change is not None:
+            changes.append(muse_change)
     return changes, preserved
 
 
@@ -193,14 +286,25 @@ def apply_changes(changes: list[Change]) -> list[Path]:
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="Preview native Codex and OpenRouter estate tool setup; credentials remain in the existing source")
+    parser = argparse.ArgumentParser(description="Preview native Codex, Gemini, Muse and OpenRouter estate tool setup; credentials remain in the existing source")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--home", type=Path, default=Path.home())
     parser.add_argument("--source", type=Path)
     parser.add_argument("--server", action="append", dest="names")
+    parser.add_argument("--replace-manifest", action="store_true", help="Upgrade or replace an existing estate-mcp.json manifest")
+    parser.add_argument("--sync-gemini", action="store_true", help="Sync credential-free proxy entries into ~/.gemini/config/mcp_config.json")
+    parser.add_argument("--sync-muse", action="store_true", help="Sync credential-free proxy entries into ~/.config/muse/settings.json")
     args = parser.parse_args(argv)
     try:
-        changes, preserved = plan_setup(home=args.home, repo=Path(__file__).resolve().parents[3], source=args.source, names=args.names)
+        changes, preserved = plan_setup(
+            home=args.home,
+            repo=Path(__file__).resolve().parents[3],
+            source=args.source,
+            names=args.names,
+            replace_manifest=args.replace_manifest,
+            sync_gemini=args.sync_gemini,
+            sync_muse=args.sync_muse,
+        )
         for change in changes:
             print(f"+++ {change.path} (generated addition; existing content preserved)")
             print(change.addition)

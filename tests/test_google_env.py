@@ -262,3 +262,15 @@ def test_cached_ui_lookup_never_starts_a_subprocess(agy, monkeypatch):
 def test_empty_catalog_has_no_executable_default():
     assert mc.preferred_google_model([]) == ""
     assert mc.context_window_for("gemini-3.8-flash-high") == 0
+
+
+
+def test_subscription_env_honours_explicit_keep(agy, monkeypatch):
+    from helios.backend.process.env_scrub import NORVI_TRACKER_ENV
+
+    monkeypatch.setenv("NORVI_TRACKER_API_TOKEN", "tracker-secret-placeholder")
+    monkeypatch.setenv("GITLAB_TOKEN", "must-be-scrubbed")
+    assert "NORVI_TRACKER_API_TOKEN" not in ge.google_subscription_env()
+    env = ge.google_subscription_env(keep=NORVI_TRACKER_ENV)
+    assert env.get("NORVI_TRACKER_API_TOKEN") == "tracker-secret-placeholder"
+    assert "GITLAB_TOKEN" not in env

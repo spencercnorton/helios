@@ -114,3 +114,42 @@ def test_the_specific_file_that_was_destroyed_is_not_reachable():
 
     assert _outside_real_home(catalog.CACHE_PATH)
     assert catalog.CACHE_PATH.name == "openrouter-models.json"
+
+
+def test_changing_helios_state_dir_dynamically_updates_all_module_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Changing ``HELIOS_STATE_DIR`` after import updates all bound state paths
+    and rebinds lazy singletons without per-module monkeypatches."""
+    import importlib
+
+    alt_state = tmp_path / "dynamic-state"
+    monkeypatch.setenv("HELIOS_STATE_DIR", str(alt_state))
+
+    expected = {
+        ("helios.backend.openrouter.catalog", "CACHE_PATH"): alt_state / "openrouter-models.json",
+        ("helios.backend.openrouter.key", "KEY_PATH"): alt_state / "openrouter.key",
+        ("helios.backend.ui_state", "_DEFAULT_PATH"): alt_state / "ui-state.json",
+        ("helios.backend.model_catalog", "_CATALOG_CACHE"): alt_state / "model-catalog.json",
+        ("helios.backend.project_names", "_DEFAULT_PATH"): alt_state / "project-names.json",
+        ("helios.backend.session_archiver", "ARCHIVE_ROOT"): alt_state / "session-archive",
+        ("helios.backend.projects", "HELIOS_ARCHIVE_ROOT"): alt_state / "session-archive",
+        ("helios.backend.memory_io", "_BACKUPS_ROOT"): alt_state / "backups" / "memory",
+        ("helios.backend.memory_io", "_CONTEXT_BACKUPS_ROOT"): alt_state / "backups" / "context",
+        ("helios.backend.title_store", "_CACHE_PATH"): alt_state / "title-cache.json",
+    }
+    for (mod_name, attr), target in expected.items():
+        mod = importlib.import_module(mod_name)
+        val = getattr(mod, attr)
+        assert isinstance(val, Path)
+        assert val == target
+
+    from helios.backend import project_names, title_store, ui_state
+
+    ui_state.store().set("theme", "light")
+    project_names.store().set("/tmp/demo", "Demo")
+    title_store.store().set("sess-dyn", "Dynamic Title")
+    assert (alt_state / "ui-state.json").is_file()
+    assert (alt_state / "project-names.json").is_file()
+    assert (alt_state / "title-cache.json").is_file()

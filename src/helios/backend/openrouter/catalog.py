@@ -31,11 +31,13 @@ from helios.backend.openrouter.transport import (
     read_capped,
 )
 from helios.log import get_logger
+from helios.paths import bind_state_paths
 
 _log = get_logger("openrouter-catalog")
 
 MODELS_URL = "https://openrouter.ai/api/v1/models"
-CACHE_PATH = Path.home() / ".helios" / "openrouter-models.json"
+CACHE_PATH: Path
+_self = bind_state_paths(__name__, CACHE_PATH="openrouter-models.json")
 
 _FETCH_TIMEOUT = 15.0
 _MAX_BODY = 8 * 1024 * 1024
@@ -302,7 +304,7 @@ def context_length_for(model_id: str) -> int:
 
 def _read_cache() -> list[dict]:
     try:
-        payload = json.loads(CACHE_PATH.read_text(encoding="utf-8"))
+        payload = json.loads(_self.CACHE_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return []
     rows = payload.get("rows") if isinstance(payload, dict) else None
@@ -310,22 +312,23 @@ def _read_cache() -> list[dict]:
 
 
 def _write_cache(rows: list[dict]) -> None:
+    cache_path = _self.CACHE_PATH
     tmp: Path | None = None
     try:
-        CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
         # Unique tmp name per call: a key save fans out to concurrent
         # refreshes (Settings + main window), and a shared tmp path raced —
         # one winner's replace() left the loser's chmod/replace hitting
         # ENOENT ("No such file or directory: …json.tmp").
         fd, tmp_name = tempfile.mkstemp(
-            prefix=f"{CACHE_PATH.name}.", suffix=".tmp", dir=CACHE_PATH.parent
+            prefix=f"{cache_path.name}.", suffix=".tmp", dir=cache_path.parent
         )
         tmp = Path(tmp_name)
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(json.dumps({"fetched_at": int(time.time()), "rows": rows}))
         os.chmod(tmp, 0o600)
-        tmp.replace(CACHE_PATH)
+        tmp.replace(cache_path)
     except OSError as e:
         if tmp is not None:
             tmp.unlink(missing_ok=True)
-        _log.warning("could not write %s: %s", CACHE_PATH, e)
+        _log.warning("could not write %s: %s", cache_path, e)

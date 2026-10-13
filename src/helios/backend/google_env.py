@@ -124,12 +124,12 @@ def subscription_configuration_error() -> str:
     return ""
 
 
-def google_subscription_env() -> dict[str, str]:
+def google_subscription_env(*, keep: tuple[str, ...] | frozenset[str] = ()) -> dict[str, str]:
     """Return a scrubbed account-only environment, refusing API settings."""
     error = subscription_configuration_error()
     if error:
         raise GoogleSubscriptionRequired(error)
-    env = scrubbed_child_env()
+    env = scrubbed_child_env(keep=keep)
     for name in tuple(env):
         upper = name.upper()
         if upper.startswith((

@@ -181,3 +181,27 @@ def test_failed_serve_probe_fails_closed(muse, monkeypatch):
 def test_cached_only_muse_entries_are_pending_not_invented(monkeypatch):
     monkeypatch.setattr(muse_env, "_cache", None)
     assert model_catalog.muse_entries(cached_only=True) == ([], "discovery-pending")
+
+
+def test_list_mcp_servers_reads_muse_settings_and_handles_empty(tmp_path, monkeypatch):
+    import json
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
+    assert muse_env.list_mcp_servers() == []
+
+    muse_dir = tmp_path / ".config" / "muse"
+    muse_dir.mkdir(parents=True)
+    settings_file = muse_dir / "settings.json"
+    settings_file.write_text("", encoding="utf-8")
+    assert muse_env.list_mcp_servers() == []
+
+    settings_file.write_text(json.dumps({
+        "mcpServers": {
+            "code-intel": {"command": "python3", "args": ["-m", "intel"]},
+        }
+    }), encoding="utf-8")
+    servers = muse_env.list_mcp_servers()
+    assert len(servers) == 1
+    assert servers[0]["name"] == "code-intel"
+    assert servers[0]["command"] == "python3"
+    assert servers[0]["args"] == ["-m", "intel"]

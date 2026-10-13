@@ -429,3 +429,20 @@ def test_close_shuts_every_leaf_before_stopping_drivers(monkeypatch):
         assert order.index(f"shutdown:{name}") < stop_index
     assert removed_sources == [77]
     assert f._startup_archive_timer_id == 0
+
+
+
+def test_app_quit_runs_window_close_request_before_quitting():
+    from helios.app import HeliosApplication
+
+    events: list[str] = []
+    win = types.SimpleNamespace(
+        _on_close_request=lambda: events.append("close-request"),
+        close=lambda: events.append("window-close"),
+    )
+    fake_app = types.SimpleNamespace(
+        get_windows=lambda: [win],
+        quit=lambda: events.append("app-quit"),
+    )
+    types.MethodType(HeliosApplication._on_quit, fake_app)()
+    assert events == ["close-request", "window-close", "app-quit"]

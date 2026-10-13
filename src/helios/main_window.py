@@ -884,8 +884,6 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         rewind_act = Gio.SimpleAction.new("rewind", None)
         rewind_act.connect("activate", lambda *_a: self._show_rewind())
         self.add_action(rewind_act)
-        self._app_quit_act = Gio.SimpleAction.new("quit", None)
-        self.add_action(self._app_quit_act)
         self.connect("close-request", self._on_close_request)
 
         # App-level action so a "session finished" notification can deep-link

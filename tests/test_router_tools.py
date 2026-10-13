@@ -500,3 +500,26 @@ class TestDispatchAvailableCache:
         finally:
             router_client.RouterClient = monkey
         assert router_client.dispatch_available() is False
+
+
+def test_router_mcp_launcher_path_prefers_repo_then_packaged(tmp_path):
+    from helios.backend.router_tools import router_mcp_launcher_path
+
+    repo_script = tmp_path / "repo" / "scripts" / "helios-router-mcp"
+    pkg_script = tmp_path / "usr" / "lib" / "helios" / "helios-router-mcp"
+
+    # When only the packaged launcher exists, return it.
+    pkg_script.parent.mkdir(parents=True, exist_ok=True)
+    pkg_script.write_text("#!/bin/sh\n", encoding="utf-8")
+    assert router_mcp_launcher_path(
+        repo_launcher=repo_script,
+        packaged_launcher=pkg_script,
+    ) == pkg_script
+
+    # When the repo launcher also exists, prefer the repo checkout.
+    repo_script.parent.mkdir(parents=True, exist_ok=True)
+    repo_script.write_text("#!/bin/sh\n", encoding="utf-8")
+    assert router_mcp_launcher_path(
+        repo_launcher=repo_script,
+        packaged_launcher=pkg_script,
+    ) == repo_script

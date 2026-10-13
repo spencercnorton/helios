@@ -17,3 +17,7 @@ override_dh_auto_install:
 	# Same icon sizes install-desktop.sh renders, from the same master PNG.
 	python3 debian/render-icons.py data/icons/dev.norvi.Helios.png \
 		debian/helios/usr/share/icons/hicolor dev.norvi.Helios
+	install -d debian/helios/usr/lib/helios
+	install -m 0755 scripts/helios-router-mcp debian/helios/usr/lib/helios/helios-router-mcp
+	install -m 0755 scripts/helios-estate-mcp debian/helios/usr/lib/helios/helios-estate-mcp
+	install -m 0755 scripts/setup-codex-estate debian/helios/usr/lib/helios/setup-codex-estate

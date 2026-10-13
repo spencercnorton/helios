@@ -3,7 +3,9 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from helios.backend.estate_setup import proxy_main
+_src = Path(__file__).resolve().parents[1] / "src"
+if (_src / "helios").is_dir():
+    sys.path.insert(0, str(_src))
+from helios.backend.estate_setup import proxy_main  # noqa: E402
 
 raise SystemExit(proxy_main())

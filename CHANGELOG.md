@@ -6,7 +6,28 @@ source (`source.tar.gz`) and `SHA256SUMS.txt`.
 
 ## Unreleased
 
-- Clarify agent setup prerequisites, working-directory fallbacks and error-message formatting.
+## 0.104.0 — 2026-10-13
+
+- Ship `helios-router-mcp`, `helios-estate-mcp`, and `setup-codex-estate` in
+  `/usr/lib/helios/` for packaged `.deb` installs and resolve the packaged
+  launcher path when no source checkout is present.
+- Upgrade `setup-codex-estate` to support `--replace-manifest`, `--sync-gemini`,
+  and `--sync-muse` so all non-Claude CLI providers can share credential-free
+  stdio MCP proxy entries, and surface Muse MCP servers in Settings → Tools.
+- Grant the work-tracker token to interactive Google sessions at parity with
+  the other interactive providers, and populate Google and Muse tool/MCP
+  inventories for the Capabilities pane.
+- Default session title generation to `first_message` (no model call), align
+  Settings built-in model keys with the local engine, hide the Ollama status
+  row unless Ollama is selected, and require an existing `llama-cli` binary
+  rather than downloading unverified archives at runtime.
+- Route `app.quit` (`Ctrl+Q`) through each window's close-request shutdown path
+  before exiting so active drivers and UI timers terminate cleanly.
+- Account for tool-schema token overhead during OpenRouter pre-round compaction,
+  bound oversized single tool outputs via `ContextArchive`, and honor
+  `Retry-After` headers on HTTP 429 responses.
+- Bind `HELIOS_STATE_DIR`-backed module path attributes dynamically so runtime
+  environment changes redirect all state stores without reloading modules.
 
 ## 0.103.3 — 2026-10-13
 

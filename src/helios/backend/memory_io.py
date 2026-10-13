@@ -44,8 +44,15 @@ from pathlib import Path
 from typing import Any
 
 
-_BACKUPS_ROOT = Path.home() / ".helios" / "backups" / "memory"
-_CONTEXT_BACKUPS_ROOT = Path.home() / ".helios" / "backups" / "context"
+from helios.paths import bind_state_paths
+
+_BACKUPS_ROOT: Path
+_CONTEXT_BACKUPS_ROOT: Path
+_self = bind_state_paths(
+    __name__,
+    _BACKUPS_ROOT=("backups", "memory"),
+    _CONTEXT_BACKUPS_ROOT=("backups", "context"),
+)
 BACKUP_RETAIN = 5  # keep this many historical versions per file
 
 
@@ -449,7 +456,7 @@ def _backup_dir(memory_path: Path) -> Path:
         bucket = parts[i + 1] if i + 1 < len(parts) else "global"
     except ValueError:
         bucket = "global"
-    return _BACKUPS_ROOT / bucket / memory_path.stem
+    return _self._BACKUPS_ROOT / bucket / memory_path.stem
 
 
 def _context_backup_dir(path: Path) -> Path:
@@ -468,7 +475,7 @@ def _context_backup_dir(path: Path) -> Path:
     parent = path.parent.resolve()
     digest = hashlib.sha1(str(parent).encode("utf-8", "surrogateescape")).hexdigest()[:12]
     bucket = f"{parent.name or 'root'}-{digest}"
-    return _CONTEXT_BACKUPS_ROOT / bucket / path.stem
+    return _self._CONTEXT_BACKUPS_ROOT / bucket / path.stem
 
 
 def _write_backup(path: Path, bdir: Path) -> None:

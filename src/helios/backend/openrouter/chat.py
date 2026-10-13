@@ -141,6 +141,7 @@ class ChatError(Exception):
         status: int | None = None,
         retryable: bool = False,
         response_started: bool = False,
+        retry_after_seconds: float | None = None,
     ) -> None:
         super().__init__(message or kind.value)
         self.kind = kind
@@ -151,6 +152,7 @@ class ChatError(Exception):
         # tool-call fragments), which may have no display delta or response id.
         # Such a failure cannot prove rejection or authorize a replay.
         self.response_started = response_started
+        self.retry_after_seconds = retry_after_seconds
 
 
 @dataclass(frozen=True, slots=True)
@@ -279,6 +281,7 @@ def stream_chat(
                 deadline=deadline,
                 monotonic=monotonic,
                 status=e.status,
+                retry_after_seconds=e.retry_after_seconds,
             )
     assert last_error is not None  # loop only exits via raise/return
     raise last_error
@@ -758,6 +761,21 @@ def _from_transport_failure(exc: TransportFailure) -> ChatError:
     return ChatError(ChatErrorKind.CONNECTION, "could not reach OpenRouter", retryable=True)
 
 
+def _parse_retry_after(headers: Mapping[str, str] | None) -> float | None:
+    if not isinstance(headers, Mapping):
+        return None
+    raw = headers.get("retry-after") or headers.get("Retry-After")
+    if raw is None:
+        return None
+    try:
+        seconds = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if seconds < 0:
+        return None
+    return min(15.0, seconds)
+
+
 def _error_from_response(response) -> ChatError:
     body = b""
     try:
@@ -765,7 +783,9 @@ def _error_from_response(response) -> ChatError:
     except TransportFailure:
         pass
     message, code = _parse_error_payload(body)
-    return _classify(response.status, code, message)
+    err = _classify(response.status, code, message)
+    err.retry_after_seconds = _parse_retry_after(getattr(response, "headers", None))
+    return err
 
 
 def _error_from_wire(wire_error: Mapping) -> ChatError:
@@ -832,13 +852,15 @@ def _sleep_before_retry(
     deadline: float,
     monotonic,
     status: int | None,
+    retry_after_seconds: float | None = None,
 ) -> None:
-    del status  # Retry-After already consumed by the transport layer timing
+    del status
     base = min(2.0, 0.25 * (2 ** (attempt - 1)))
+    delay = retry_after_seconds if retry_after_seconds is not None else base
     remaining = deadline - monotonic()
-    if remaining <= base:
+    if remaining <= delay:
         raise ChatError(ChatErrorKind.TIMEOUT, "retry budget exhausted")
-    if token.wait(base):
+    if token.wait(delay):
         raise ChatError(ChatErrorKind.CANCELLED, "cancelled")
 
 

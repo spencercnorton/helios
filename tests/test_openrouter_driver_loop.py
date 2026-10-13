@@ -1869,3 +1869,21 @@ def test_parallel_classifier_keeps_external_reads_and_mcp_serial(driver):
     assert not driver._parallel_read(_call(name="Bash", arguments='{"command":"pwd"}'))
     driver._estate = SimpleNamespace(owns=lambda _name: True)
     assert not driver._parallel_read(_call())
+
+
+
+def test_oversized_tool_output_is_archived_and_bounded_inline(driver, monkeypatch):
+    import json
+    from helios.backend.openrouter.continuity import ContextArchive
+
+    huge = "HEADER_MARKER " + ("middle_line\n" * 12_000) + " TAIL_MARKER"
+    assert len(huge) > driver._MAX_INLINE_TOOL_OUTPUT_CHARS
+    monkeypatch.setattr(driver, "_execute_tool_call", lambda _call: (huge, False))
+    content, is_error = driver._execute_tool_safely(_call(0))
+    assert not is_error
+    assert len(content) < len(huge)
+    assert "HEADER_MARKER" in content
+    assert "TAIL_MARKER" in content
+    assert "archived to session context" in content
+    recovered = json.loads(ContextArchive(driver.session_id).read({"query": "TAIL_MARKER"}))
+    assert recovered["total_chunks"] > 0

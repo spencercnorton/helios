@@ -21,9 +21,11 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, GObject
 
 from helios.backend import model_catalog
+from helios.backend import google_env
 from helios.backend.google_env import (
     GoogleBinaryNotFound, find_google_binary, google_subscription_env,
 )
+from helios.backend.process.env_scrub import NORVI_TRACKER_ENV
 from helios.backend.process.codex_transcript import CodexTranscriptWriter
 from helios.backend.process.message_queue import (
     ExecutionAcceptanceEvidence, ExecutionDispatchEvidence,
@@ -106,7 +108,7 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
         self._startup_pending_text: str | None = None
         self._transcript = CodexTranscriptWriter(cwd, provider=model_catalog.PROVIDER_GOOGLE)
         self.init_tools: list[str] = []
-        self.init_mcp_servers: dict[str, Any] = {}
+        self.init_mcp_servers: list[dict[str, Any]] = []
 
     @property
     def is_running(self) -> bool:
@@ -164,7 +166,7 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
             raise GeminiDriverSpawnError("Google sessions cannot start in your home folder. Choose a project directory.")
         try:
             binary = find_google_binary()
-            env = google_subscription_env()
+            env = google_subscription_env(keep=NORVI_TRACKER_ENV)
         except (GoogleBinaryNotFound, ValueError) as exc:
             raise GeminiDriverSpawnError(str(exc)) from exc
         effort = self._effort or "high"
@@ -368,6 +370,20 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
                 self._protocol_failure("Google reported an unexpected model, project, or approval policy. The session was stopped.")
                 return False
             self.init_tools = list(info.get("tools") or [])
+            raw_mcp = info.get("mcp_servers")
+            if isinstance(raw_mcp, list):
+                self.init_mcp_servers = [dict(row) for row in raw_mcp if isinstance(row, dict)]
+            elif isinstance(raw_mcp, dict):
+                self.init_mcp_servers = [
+                    {"name": str(k), **(v if isinstance(v, dict) else {"status": str(v)})}
+                    for k, v in raw_mcp.items()
+                ]
+            else:
+                self.init_mcp_servers = [
+                    {"name": s["name"], "status": "configured"}
+                    for s in google_env.list_mcp_servers()
+                    if isinstance(s, dict) and s.get("name")
+                ]
             try:
                 self._transcript.bind_thread(sid)
             except Exception:
@@ -379,6 +395,10 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
             pending, self._startup_pending_text = self._startup_pending_text, None
             self._is_busy = False
             self.emit("session-started", sid, self._cwd, self._model)
+            self.emit(
+                "capabilities-updated",
+                {"tools": list(self.init_tools), "mcp_servers": list(self.init_mcp_servers)},
+            )
             if pending:
                 self.send_user_text(pending, _reuse_execution_attempt=True)
         elif event == "step_update":

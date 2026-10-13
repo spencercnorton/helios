@@ -15,10 +15,12 @@ from pathlib import Path
 from threading import Lock
 
 from helios.log import get_logger
+from helios.paths import bind_state_paths
 
 _log = get_logger("project_names")
 
-_DEFAULT_PATH = Path.home() / ".helios" / "project-names.json"
+_DEFAULT_PATH: Path
+_self = bind_state_paths(__name__, _DEFAULT_PATH="project-names.json")
 _LOCK = Lock()
 
 
@@ -60,7 +62,7 @@ class ProjectNameStore:
     """Thread-safe persistent map of cwd -> display label."""
 
     def __init__(self, path: Path | None = None) -> None:
-        self._path = path or _DEFAULT_PATH
+        self._path = path or _self._DEFAULT_PATH
         with _LOCK:
             self._data = _load(self._path)
 
@@ -91,6 +93,7 @@ _global: ProjectNameStore | None = None
 def store() -> ProjectNameStore:
     """Process-wide singleton."""
     global _global
-    if _global is None:
+    default_path = _self._DEFAULT_PATH
+    if _global is None or _global._path != default_path:
         _global = ProjectNameStore()
     return _global

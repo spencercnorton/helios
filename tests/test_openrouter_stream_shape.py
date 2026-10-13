@@ -367,3 +367,19 @@ class TestInlineThinkingAndThoughtDeltas:
         text = [e.text for e in events if isinstance(e, or_chat.TextDelta)]
         assert reasoning == ["Direct thought block"]
         assert text == ["Direct answer"]
+
+
+
+def test_retry_after_header_is_parsed_on_429():
+    from helios.backend.openrouter import chat as or_chat
+    from helios.backend.openrouter.transport import _BufferedResponse
+
+    resp = _BufferedResponse(
+        429,
+        {"Retry-After": "4.5"},
+        b'{"error": {"message": "rate limited", "code": 429}}',
+    )
+    err = or_chat._error_from_response(resp)
+    assert err.kind is or_chat.ChatErrorKind.RATE_LIMIT
+    assert err.retryable is True
+    assert err.retry_after_seconds == 4.5

@@ -176,6 +176,7 @@ class SettingsDialog(Adw.PreferencesDialog):
         self._reload_google()
         self._reload_muse()
         self._reload_google_mcp()
+        self._reload_muse_mcp()
         self._reload_router()
         self._reload_openrouter()
 
@@ -503,26 +504,40 @@ class SettingsDialog(Adw.PreferencesDialog):
         self._title_backend_row = Adw.ComboRow()
         self._title_backend_row.set_title("Title Generation Backend")
         self._title_backend_row.set_subtitle("Select the engine used to generate session titles in the sidebar.")
-        self._title_backend_model = Gtk.StringList.new(["Built-in Local Engine", "Ollama", "Claude"])
+        self._title_backend_model = Gtk.StringList.new(
+            ["First message (no model)", "Ollama", "Built-in Local Engine", "Claude"]
+        )
         self._title_backend_row.set_model(self._title_backend_model)
-        
-        backend_map = {"builtin": 0, "ollama": 1, "claude": 2}
-        reverse_map = {0: "builtin", 1: "ollama", 2: "claude"}
-        current_backend = ui.get("title_backend", "builtin")
+
+        backend_map = {"first_message": 0, "none": 0, "ollama": 1, "builtin": 2, "claude": 3}
+        reverse_map = {0: "first_message", 1: "ollama", 2: "builtin", 3: "claude"}
+        current_backend = str(ui.get("title_backend", "first_message") or "first_message")
         self._title_backend_row.set_selected(backend_map.get(current_backend, 0))
-        
+
         self._title_builtin_model_row = Adw.ComboRow()
         self._title_builtin_model_row.set_title("Built-in Model")
         self._title_builtin_model_list = Gtk.StringList.new(["Qwen 2.5 0.5B", "Llama 3.2 1B", "Phi-3 Mini"])
         self._title_builtin_model_row.set_model(self._title_builtin_model_list)
-        
-        builtin_map = {"qwen2.5:0.5b": 0, "llama3.2:1b": 1, "phi3:mini": 2}
-        reverse_builtin_map = {0: "qwen2.5:0.5b", 1: "llama3.2:1b", 2: "phi3:mini"}
-        current_builtin = ui.get("title_builtin_model", "qwen2.5:0.5b")
+
+        builtin_map = {
+            "qwen2.5-0.5b": 0, "qwen2.5:0.5b": 0,
+            "llama-3.2-1b": 1, "llama3.2:1b": 1,
+            "phi-3-mini": 2, "phi3:mini": 2,
+        }
+        reverse_builtin_map = {0: "qwen2.5-0.5b", 1: "llama-3.2-1b", 2: "phi-3-mini"}
+        current_builtin = str(
+            ui.get("builtin_title_model") or ui.get("title_builtin_model") or "qwen2.5-0.5b"
+        )
         self._title_builtin_model_row.set_selected(builtin_map.get(current_builtin, 0))
-        
-        self._title_builtin_model_row.connect("notify::selected", lambda r, _p: ui.set("title_builtin_model", reverse_builtin_map.get(r.get_selected(), "qwen2.5:0.5b")))
-        
+
+        self._title_builtin_model_row.connect(
+            "notify::selected",
+            lambda r, _p: ui.set(
+                "builtin_title_model",
+                reverse_builtin_map.get(r.get_selected(), "qwen2.5-0.5b"),
+            ),
+        )
+
         behavior.add(self._title_backend_row)
         behavior.add(self._title_builtin_model_row)
 
@@ -533,17 +548,6 @@ class SettingsDialog(Adw.PreferencesDialog):
         behavior.add(self._ollama_url_row)
         behavior.add(self._ollama_model_row)
 
-        def _update_visibility(*args):
-            idx = self._title_backend_row.get_selected()
-            is_ollama = (idx == 1)
-            is_builtin = (idx == 0)
-            self._ollama_url_row.set_visible(is_ollama)
-            self._ollama_model_row.set_visible(is_ollama)
-            self._title_builtin_model_row.set_visible(is_builtin)
-            ui.set("title_backend", reverse_map.get(idx, "builtin"))
-
-        self._title_backend_row.connect("notify::selected", _update_visibility)
-        _update_visibility()
         self._ollama_status_row = Adw.ActionRow(title="Ollama connection")
         self._ollama_status_row.set_use_markup(False)
         self._ollama_status_row.set_subtitle("Save these settings and check model availability without generating text.")
@@ -552,6 +556,19 @@ class SettingsDialog(Adw.PreferencesDialog):
         self._ollama_check_btn.connect("clicked", self._on_ollama_check)
         self._ollama_status_row.add_suffix(self._ollama_check_btn)
         behavior.add(self._ollama_status_row)
+
+        def _update_visibility(*args):
+            idx = self._title_backend_row.get_selected()
+            is_ollama = idx == 1
+            is_builtin = idx == 2
+            self._ollama_url_row.set_visible(is_ollama)
+            self._ollama_model_row.set_visible(is_ollama)
+            self._ollama_status_row.set_visible(is_ollama)
+            self._title_builtin_model_row.set_visible(is_builtin)
+            ui.set("title_backend", reverse_map.get(idx, "first_message"))
+
+        self._title_backend_row.connect("notify::selected", _update_visibility)
+        _update_visibility()
         for row in (self._ollama_url_row, self._ollama_model_row):
             row.connect("changed", self._on_ollama_inputs_changed)
 
@@ -1688,6 +1705,20 @@ class SettingsDialog(Adw.PreferencesDialog):
         self._gemini_mcp_group.set_header_suffix(refresh_gemini_mcp)
         self._gemini_mcp_rows: list[Gtk.Widget] = []
 
+        self._muse_mcp_group = Adw.PreferencesGroup()
+        self._muse_mcp_group.set_title("Muse MCP servers")
+        self._muse_mcp_group.set_description(
+            "External MCP tool servers available to Meta Muse (`~/.config/muse/settings.json`)."
+        )
+        page.add(self._muse_mcp_group)
+        refresh_muse_mcp = Gtk.Button.new_from_icon_name("view-refresh-symbolic")
+        refresh_muse_mcp.add_css_class("flat")
+        refresh_muse_mcp.set_tooltip_text("Reload Muse MCP servers")
+        refresh_muse_mcp.set_valign(Gtk.Align.CENTER)
+        refresh_muse_mcp.connect("clicked", lambda *_: self._reload_muse_mcp())
+        self._muse_mcp_group.set_header_suffix(refresh_muse_mcp)
+        self._muse_mcp_rows: list[Gtk.Widget] = []
+
         # --- Built-in tools ----------------------------------------------
         self._builtin_group = Adw.PreferencesGroup()
         self._builtin_group.set_title("Built-in tools")
@@ -2071,6 +2102,43 @@ class SettingsDialog(Adw.PreferencesDialog):
                 row.add_prefix(icon)
                 self._gemini_mcp_group.add(row)
                 self._gemini_mcp_rows.append(row)
+
+        self._run_async(work, on_done)
+
+    def _reload_muse_mcp(self) -> None:
+        for row in self._muse_mcp_rows:
+            self._muse_mcp_group.remove(row)
+        self._muse_mcp_rows = []
+
+        def work():
+            from helios.backend import muse_env
+            return muse_env.list_mcp_servers()
+
+        def on_done(servers):
+            if self._closed or isinstance(servers, Exception):
+                return
+            for row in self._muse_mcp_rows:
+                self._muse_mcp_group.remove(row)
+            self._muse_mcp_rows = []
+            if not servers:
+                row = Adw.ActionRow()
+                row.set_title("No Muse MCP servers configured")
+                row.set_subtitle("Add servers to ~/.config/muse/settings.json.")
+                self._muse_mcp_group.add(row)
+                self._muse_mcp_rows.append(row)
+                return
+            for s in servers:
+                row = Adw.ActionRow()
+                row.set_title(str(s.get("name") or "MCP server"))
+                cmd = str(s.get("command") or "")
+                args = " ".join(str(a) for a in s.get("args") or [])
+                sub = f"{cmd} {args}".strip()
+                row.set_subtitle(sub or "Configured")
+                icon = Gtk.Image.new_from_icon_name("utilities-terminal-symbolic")
+                icon.add_css_class("dim-label")
+                row.add_prefix(icon)
+                self._muse_mcp_group.add(row)
+                self._muse_mcp_rows.append(row)
 
         self._run_async(work, on_done)
 

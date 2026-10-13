@@ -327,3 +327,30 @@ def set_api_key(key: str) -> tuple[bool, str]:
         return False, (detail[:300] or "The Muse CLI refused the API key.")
     _cache = None
     return True, "API key saved by the Muse CLI."
+
+
+
+def list_mcp_servers() -> list[dict[str, Any]]:
+    """Read configured MCP servers from ~/.config/muse/settings.json."""
+    config_path = Path.home() / ".config" / "muse" / "settings.json"
+    if not config_path.is_file():
+        return []
+    try:
+        raw = config_path.read_text(encoding="utf-8").strip()
+        if not raw:
+            return []
+        data = json.loads(raw)
+        servers = data.get("mcpServers") or {}
+        if not isinstance(servers, dict):
+            return []
+        result = []
+        for name, cfg in servers.items():
+            if isinstance(cfg, dict):
+                result.append({
+                    "name": str(name),
+                    "command": str(cfg.get("command") or cfg.get("url") or "stdio"),
+                    "args": list(cfg.get("args") or []),
+                })
+        return result
+    except Exception:
+        return []

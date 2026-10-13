@@ -185,17 +185,22 @@ class TitleGenerator(GObject.Object):
             assistant=(assistant_text or "(no reply yet)")[:_MAX_ASSISTANT_CHARS],
         )
 
-        # Local-LLM backend: do the call over HTTP or local subprocess on a worker thread instead
-        # of spawning Claude. This is the safe default: title generation is
-        # housekeeping and must not consume an invisible cloud budget.
-        backend = ui_state_store().get("title_backend", "builtin")
+        # Title generation defaults to "first_message" (no model call).
+        # Unknown/invalid backends also fail closed to no model call so
+        # corrupt ui-state never triggers unrequested cloud spend or
+        # unverified local model downloads.
+        backend = ui_state_store().get("title_backend", "first_message")
         if backend == "claude":
-            pass # fall through to Claude below
+            pass  # fall through to Claude below
         elif backend == "ollama":
             self._spawn_ollama(session.session_id, prompt)
             return
-        else:
+        elif backend == "builtin":
             self._spawn_builtin(session.session_id, prompt)
+            return
+        else:
+            self._in_flight = ""
+            GLib.idle_add(self._pump)
             return
 
         # Resolve binary lazily so an unavailable claude doesn't break startup.

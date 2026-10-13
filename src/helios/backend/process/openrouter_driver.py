@@ -1479,9 +1479,12 @@ class OpenRouterDriver(UserMessageQueueMixin, GObject.Object):
             math.ceil(estimate_tokens(round_context) * _PROMPT_ESTIMATE_MARGIN)
             if round_context else 0
         )
+        schema_tokens = int(self._schema_tokens * _PROMPT_ESTIMATE_MARGIN)
         while True:
             if window > 0:
-                self._compact_history(max(1, int(window * budget) - context_tokens))
+                self._compact_history(
+                    max(1, int(window * budget) - context_tokens - schema_tokens)
+                )
             round_text: list[str] = []
             round_tool_calls: list[or_chat.ToolCallRequest] = []
             finish_reason = ""
@@ -1590,7 +1593,7 @@ class OpenRouterDriver(UserMessageQueueMixin, GObject.Object):
                 # this terminates on its own.
                 budget /= 2
                 target = (
-                    max(1, int(window * budget) - context_tokens)
+                    max(1, int(window * budget) - context_tokens - schema_tokens)
                     if window > 0
                     else int(estimate_tokens(self._history) * budget)
                 )
@@ -1776,12 +1779,39 @@ class OpenRouterDriver(UserMessageQueueMixin, GObject.Object):
         except Exception:  # noqa: BLE001 — optimization must never orphan a call
             return False
 
+    _MAX_INLINE_TOOL_OUTPUT_CHARS = 120_000
+    _INLINE_HEAD_CHARS = 40_000
+    _INLINE_TAIL_CHARS = 20_000
+
+    def _bound_tool_output(self, call: or_chat.ToolCallRequest, content: str) -> str:
+        scrubbed = _scrub_tool_output(content)
+        if len(scrubbed) <= self._MAX_INLINE_TOOL_OUTPUT_CHARS:
+            return scrubbed
+        omitted = len(scrubbed) - self._INLINE_HEAD_CHARS - self._INLINE_TAIL_CHARS
+        archived_note = "archived to session context; use read_context(query=...) to inspect full output"
+        if self._session_id:
+            try:
+                ContextArchive(self._session_id).append(
+                    [{"role": "tool", "tool_call_id": call.id, "content": scrubbed}],
+                    sequence=len(self._history),
+                )
+            except (OSError, ValueError) as exc:
+                _log.warning("could not archive oversized tool output: %s", exc)
+                archived_note = "omitted due to inline size limit"
+        else:
+            archived_note = "omitted due to inline size limit"
+        return (
+            f"{scrubbed[:self._INLINE_HEAD_CHARS]}\n\n"
+            f"[... {omitted:,} characters {archived_note} ...]\n\n"
+            f"{scrubbed[-self._INLINE_TAIL_CHARS:]}"
+        )
+
     def _execute_tool_safely(self, call: or_chat.ToolCallRequest) -> tuple[str, bool]:
         if self._is_cancelled():
             return "Cancelled by the user.", True
         try:
             content, is_error = self._execute_tool_call(call)
-            return _scrub_tool_output(content), is_error
+            return self._bound_tool_output(call, content), is_error
         except Exception as exc:  # noqa: BLE001 — always pair every call
             _log.warning("tool dispatch failed: %s", exc)
             return _scrub_tool_output(f"{call.name} failed: {exc}"), True
