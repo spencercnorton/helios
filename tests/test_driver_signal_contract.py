@@ -30,6 +30,7 @@ from helios.backend.process.driver_manager import (  # noqa: E402
     COMMON_DRIVER_SIGNALS,
 )
 from helios.backend.process.gemini_driver import GeminiCliDriver
+from helios.backend.process.muse_driver import MuseServeDriver  # noqa: E402
 from helios.backend.process.openrouter_driver import (  # noqa: E402
     OpenRouterDriver,
 )
@@ -40,6 +41,7 @@ DRIVERS = (
     CodexAppServerDriver,
     OpenRouterDriver,
     GeminiCliDriver,
+    MuseServeDriver,
 )
 
 

@@ -87,6 +87,7 @@ HELIOS_INTERNAL_ENV = (
     "HELIOS_DEBUG",
     "HELIOS_LOG_LEVEL",
     "HELIOS_CLAUDE_BINARY",
+    "HELIOS_MUSE_BINARY",
     "HELIOS_CODEX_BINARY",
     "HELIOS_CODEX_TRANSPORT",
     "HELIOS_ROUTER_SOCKET",
@@ -117,6 +118,11 @@ CLAUDE_AUTH_ENV = frozenset(
         "CLAUDE_CODE_OAUTH_TOKEN",
     }
 )
+
+# Muse spawns (driver, catalog and account probes). `META_API_KEY` always
+# overrides the stored account login, so detection and launch must agree: both
+# forward exactly this set. Never forwarded to another provider's child.
+MUSE_AUTH_ENV = frozenset({"META_API_KEY"})
 
 # Codex `exec` ONLY. Per Codex docs CODEX_API_KEY is honored only by `codex exec`;
 # Helios's native App Server / discovery / login / status / version contract is

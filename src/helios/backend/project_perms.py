@@ -40,7 +40,7 @@ from helios.paths import state_dir
 
 # Provider ids, duplicated from model_catalog as plain strings so the policy
 # table stays import-free (model_catalog must be able to import this module).
-ALL_PROVIDERS = frozenset({"anthropic", "openai", "openrouter", "google"})
+ALL_PROVIDERS = frozenset({"anthropic", "openai", "openrouter", "google", "muse"})
 
 
 @dataclass(frozen=True, slots=True)

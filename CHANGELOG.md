@@ -8,6 +8,16 @@ source (`source.tar.gz`) and `SHA256SUMS.txt`.
 
 - Clarify agent setup prerequisites, working-directory fallbacks and error-message formatting.
 
+## 0.102.0 — 2026-10-12
+
+- Add Muse (Meta) as a native provider: Helios drives Muse Code over
+  `muse serve` (MSP) with the same streaming, tool cards, subagent/workflow
+  dock animations, approvals, and durable accounting as the other native
+  providers. Sign in with `muse login` or a Meta API key in
+  Settings → Providers; models come from the live `model/list` catalog and
+  are selectable only when the CLI proves them. The CLI keeps every
+  credential — Helios stores no copy.
+
 ## 0.101.5 — 2026-10-12
 
 - Fix Google sessions getting stuck after native acceptance: retain the native
