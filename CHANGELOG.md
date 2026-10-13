@@ -8,6 +8,13 @@ source (`source.tar.gz`) and `SHA256SUMS.txt`.
 
 - Clarify agent setup prerequisites, working-directory fallbacks and error-message formatting.
 
+## 0.103.3 — 2026-10-13
+
+- Add Muse parity test coverage: native provider identity and routing,
+  permission-mode parity, fail-closed discovery without a Muse binary or
+  a working `muse serve` probe, and the Muse sidebar provider chip.
+  No runtime behavior change.
+
 ## 0.103.2 — 2026-10-13
 
 - Give Muse a working shell in Bypass: Bypass now starts `muse serve

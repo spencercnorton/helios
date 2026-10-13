@@ -4,8 +4,18 @@ from __future__ import annotations
 
 import uuid
 
-from helios.backend import model_catalog, muse_env
+import pytest
+
+from helios.backend import model_catalog, muse_env, project_perms
+from helios.backend import muse_binary as mb
 from helios.backend.muse_binary import MuseBinaryNotFound
+from helios.backend.provider_identity import (
+    DEFAULT_PROVIDER_REGISTRY,
+    MUSE_NATIVE,
+    NativeBindingKind,
+    ProviderDescriptor,
+    RuntimeKind,
+)
 from helios.backend.muse_env import MuseAuthStatus, MuseModel
 
 
@@ -80,3 +90,94 @@ def test_muse_entries_require_live_proof():
     failed = MuseAuthStatus(False, error="boom", catalog_status="probe-failed")
     entries, status = model_catalog.muse_entries(auth=failed)
     assert entries == [] and status == "probe-failed"
+
+
+@pytest.fixture
+def muse(monkeypatch, tmp_path):
+    binary = tmp_path / "muse"
+    binary.write_text("#!/bin/sh\nexit 0\n")
+    binary.chmod(0o755)
+    monkeypatch.setenv("HELIOS_MUSE_BINARY", str(binary))
+    monkeypatch.setattr(muse_env, "_cache", None)
+    return binary
+
+
+def test_muse_is_a_native_primary_provider():
+    assert MUSE_NATIVE.provider_id == model_catalog.PROVIDER_MUSE == "muse"
+    assert MUSE_NATIVE.runtime_kind is RuntimeKind.NATIVE
+    assert MUSE_NATIVE.native_binding_kind is NativeBindingKind.SESSION
+    assert MUSE_NATIVE.supports_primary_driver is True
+    assert MUSE_NATIVE.catalog_source == "muse-serve"
+    assert DEFAULT_PROVIDER_REGISTRY.require("muse") is MUSE_NATIVE
+    assert ProviderDescriptor.from_json(MUSE_NATIVE.to_json()) == MUSE_NATIVE
+    assert model_catalog.PROVIDER_LABELS[model_catalog.PROVIDER_MUSE] == "Muse"
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    ["muse-wonder-full-1.0", "muse-spark-1.3", "muse_wonder"],
+)
+def test_muse_model_ids_route_to_muse(model_id):
+    assert model_catalog.provider_for(model_id) == model_catalog.PROVIDER_MUSE
+
+
+@pytest.mark.parametrize(
+    ("model_id", "provider"),
+    [
+        ("meta-llama/llama-3.3-70b-instruct", model_catalog.PROVIDER_OPENROUTER),
+        ("gemini-3-pro", model_catalog.PROVIDER_GOOGLE),
+        ("gpt-5.5", model_catalog.PROVIDER_OPENAI),
+        ("opus", model_catalog.PROVIDER_ANTHROPIC),
+        ("", model_catalog.PROVIDER_ANTHROPIC),
+    ],
+)
+def test_existing_provider_routing_is_unchanged(model_id, provider):
+    assert model_catalog.provider_for(model_id) == provider
+
+
+def test_muse_models_stay_out_of_openrouter_choices():
+    assert model_catalog.openrouter_model_selectable("meta/muse-wonder-1.0") is False
+
+
+def test_muse_selects_every_permission_mode_like_other_providers():
+    assert project_perms.modes_for_provider("muse") == project_perms.PERMISSION_MODES
+    assert project_perms.effective_execution_mode(
+        "bypassPermissions", "/some/project", provider="muse"
+    ) == "bypassPermissions"
+
+
+def test_invalid_override_does_not_fall_back_to_another_cli(monkeypatch):
+    monkeypatch.setenv("HELIOS_MUSE_BINARY", "/missing/explicit-muse")
+    monkeypatch.setattr(mb.shutil, "which", lambda _name: "/unrelated/claude")
+    with pytest.raises(mb.MuseBinaryNotFound):
+        mb.find_muse_binary()
+
+
+def test_no_binary_means_no_models(monkeypatch):
+    def missing():
+        raise mb.MuseBinaryNotFound("no muse")
+
+    monkeypatch.setattr(muse_env, "_cache", None)
+    monkeypatch.setattr(muse_env, "find_muse_binary", missing)
+    status = muse_env.fetch_auth_status()
+    assert status.ok is False
+    assert status.models == ()
+    entries, _source = model_catalog.muse_entries(auth=status)
+    assert entries == []
+
+
+def test_failed_serve_probe_fails_closed(muse, monkeypatch):
+    def boom(*_args, **_kwargs):
+        raise muse_env.MuseServeError("probe failed")
+
+    monkeypatch.setattr(muse_env, "serve_query", boom)
+    status = muse_env.fetch_auth_status()
+    assert status.ok is False
+    assert status.models == ()
+    assert model_catalog.muse_entries(auth=status)[0] == []
+    assert model_catalog.preferred_muse_model([]) == ""
+
+
+def test_cached_only_muse_entries_are_pending_not_invented(monkeypatch):
+    monkeypatch.setattr(muse_env, "_cache", None)
+    assert model_catalog.muse_entries(cached_only=True) == ([], "discovery-pending")
