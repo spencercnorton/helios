@@ -1,0 +1,2 @@
+# The per-repo agent journal is internal history; keep it out of release source archives.
+AGENTS/ export-ignore
