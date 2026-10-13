@@ -11,13 +11,13 @@ import helios.backend.session_providers as SP
 def _record(role: str, text: str) -> str:
     return json.dumps({
         "type": role,
-        "cwd": "/home/u/proj",
+        "cwd": "/home/user/proj",
         "message": {"role": role, "content": [{"type": "text", "text": text}]},
     })
 
 
 def _session(tmp_path, *, age_s: int = 10 * 86400):
-    proj_dir = tmp_path / "projects" / "-home-u-proj"
+    proj_dir = tmp_path / "projects" / "-home-user-proj"
     proj_dir.mkdir(parents=True)
     path = proj_dir / "sid12345.jsonl"
     path.write_text("\n".join([

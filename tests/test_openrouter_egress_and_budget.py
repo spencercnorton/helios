@@ -808,9 +808,9 @@ class TestTheScrubCatchesTheMotivatingLeak:
     PREFIXLESS = "q9" + "a1b2c3d4" * 7 + "z8y7"  # prefixless, no recognisable shape
 
     def test_an_env_dump_line_is_redacted_by_name(self):
-        out = od._scrub_tool_output(f"HOME=/home/x\nNORVI_TRACKER_API_TOKEN={self.PREFIXLESS}\nSHELL=/bin/bash")
+        out = od._scrub_tool_output(f"HOME=/home/test\nNORVI_TRACKER_API_TOKEN={self.PREFIXLESS}\nSHELL=/bin/bash")
         assert self.PREFIXLESS not in out
-        assert "HOME=/home/x" in out and "SHELL=/bin/bash" in out
+        assert "HOME=/home/test" in out and "SHELL=/bin/bash" in out
 
     def test_read_output_with_line_numbers_is_still_caught(self):
         """The Read tool numbers every line; a `^`-anchored rule missed exactly

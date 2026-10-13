@@ -15,7 +15,7 @@ def _record(role: str, text: str, *, ts: str = "", meta: bool = False) -> dict:
     rec = {
         "type": role,
         "message": {"role": role, "content": text},
-        "cwd": "/home/u/proj",
+        "cwd": "/home/user/proj",
     }
     if ts:
         rec["timestamp"] = ts
@@ -25,7 +25,7 @@ def _record(role: str, text: str, *, ts: str = "", meta: bool = False) -> dict:
 
 
 def _mk_session(tmp_path, records: list[dict]) -> P.Session:
-    proj_dir = tmp_path / "-home-u-proj"
+    proj_dir = tmp_path / "-home-user-proj"
     proj_dir.mkdir(parents=True)
     f = proj_dir / "abc12345-0000-1111-2222-333344445555.jsonl"
     f.write_text(
@@ -79,7 +79,7 @@ def test_build_payload_core_fields(tmp_path):
     payload = H.build_payload(s, "My session", include_tail=False)
     assert payload["title"] == "My session"
     assert payload["session_id"] == s.session_id
-    assert payload["cwd"] == "/home/u/proj"
+    assert payload["cwd"] == "/home/user/proj"
     assert payload["kind"] == "agent-contact"
     assert payload["from_provider"] == "anthropic"
     assert payload["to_provider"] == "openai"
@@ -88,7 +88,7 @@ def test_build_payload_core_fields(tmp_path):
         "handoff", "helios", "agent-contact", "from-openai", "to-anthropic", "agent-reply"
     ]
     assert s.session_id in payload["resume"]
-    assert "/home/u/proj" in payload["resume"]
+    assert "/home/user/proj" in payload["resume"]
     assert "transcript_tail" not in payload
 
 
