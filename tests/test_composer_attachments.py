@@ -25,9 +25,9 @@ def test_add_attachments_into_empty_composer():
 
 def test_add_attachments_quotes_paths_with_spaces():
     c = Composer()
-    c.add_attachments(["/home/me/My Project/spec.md", "/tmp/a.py"])
+    c.add_attachments(["/home/demo/My Project/spec.md", "/tmp/a.py"])
     # The space path is quoted to stay one @-token; the simple one stays bare.
-    assert c.current_text() == '@"/home/me/My Project/spec.md" @/tmp/a.py '
+    assert c.current_text() == '@"/home/demo/My Project/spec.md" @/tmp/a.py '
 
 
 def test_add_attachments_escapes_quotes_and_backslashes():

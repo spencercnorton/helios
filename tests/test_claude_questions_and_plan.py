@@ -113,7 +113,7 @@ def test_legacy_string_answers_map_onto_question_text():
 def _plan_request() -> dict:
     return _can_use_tool(
         "ExitPlanMode",
-        {"plan": "# Plan\n\n1. Do the thing", "planFilePath": "/home/x/.claude/plans/p.md"},
+        {"plan": "# Plan\n\n1. Do the thing", "planFilePath": "/home/test/.claude/plans/p.md"},
         requires_user_interaction=True,
     )
 

@@ -12,6 +12,9 @@ import json
 from helios.backend.hook_events import HookNotice, summarize_hook, summarize_codex_hook
 
 
+# Built at runtime so the source carries no literal credential shape.
+_FAKE_SECRET = "-".join(["sk", "test", "secret", "hook", "value", "0123456789"])
+
 def _response(**overrides) -> dict:
     payload = {
         "subtype": "hook_response",
@@ -39,11 +42,11 @@ def test_codex_blocked_hook_uses_a_clean_label_and_scrubbed_bounded_detail():
     notice = summarize_codex_hook({"run": {
         "eventName": "preToolUse", "status": "blocked", "entries": [
             {"kind": "context", "text": "NOT USER FACING"},
-            {"kind": "stop", "text": "token = sk-test-secret-hook-value-0123456789" + " x" * 1000},
+            {"kind": "stop", "text": "token = " + _FAKE_SECRET + " x" * 1000},
         ]}})
     assert notice.title == "Codex hook · Before tool use · blocked"
     assert notice.severity == "warning"
-    assert "sk-test-secret-hook-value-0123456789" not in notice.detail
+    assert _FAKE_SECRET not in notice.detail
     assert "NOT USER FACING" not in notice.detail
     assert len(notice.detail) <= 1000
 

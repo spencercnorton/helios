@@ -27,7 +27,7 @@ def _sidecar_line(session_id: str, title: str) -> str:
 def _user_line(text: str = "hello") -> str:
     return json.dumps({
         "type": "user",
-        "cwd": "/home/u/proj",
+        "cwd": "/home/user/proj",
         "message": {"role": "user", "content": [{"type": "text", "text": text}]},
     })
 
@@ -36,7 +36,7 @@ def _sidechain_line(text: str = "child work") -> str:
     return json.dumps(
         {
             "type": "assistant",
-            "cwd": "/home/u/proj",
+            "cwd": "/home/user/proj",
             "isSidechain": True,
             "message": {
                 "role": "assistant",
@@ -138,7 +138,7 @@ def test_discover_returns_all_including_ghosts(monkeypatch, tmp_path):
     """discover_local_sessions is a pure lister — filtering is the sidebar's job
     (via drop_empty_sessions), and the archiver wants the full list."""
     projects_dir, _ = _setup(monkeypatch, tmp_path)
-    proj = projects_dir / "-home-u"
+    proj = projects_dir / "-home-user"
     _write_sidecar(proj, "ghost", age_s=3600)
     _write_real(proj, "real", age_s=3600)
 
@@ -154,7 +154,7 @@ _NOW = 2_000_000.0  # matches the fixed mtime base in the fixtures
 def test_drop_filters_old_dead_ghost(monkeypatch, tmp_path):
     """Sidecar-only, past the grace, not live → hidden."""
     projects_dir, _ = _setup(monkeypatch, tmp_path)
-    proj = projects_dir / "-home-u"
+    proj = projects_dir / "-home-user"
     _write_sidecar(proj, "ghost", age_s=3600)
     kept = P.drop_empty_sessions(
         P.discover_local_sessions(), live_ids=set(), now=_NOW
@@ -164,7 +164,7 @@ def test_drop_filters_old_dead_ghost(monkeypatch, tmp_path):
 
 def test_drop_keeps_real_session(monkeypatch, tmp_path):
     projects_dir, _ = _setup(monkeypatch, tmp_path)
-    proj = projects_dir / "-home-u"
+    proj = projects_dir / "-home-user"
     _write_real(proj, "real", age_s=3600)
     kept = P.drop_empty_sessions(
         P.discover_local_sessions(), live_ids=set(), now=_NOW
@@ -176,7 +176,7 @@ def test_drop_keeps_recent_ghost(monkeypatch, tmp_path):
     """Within the short grace, a new session that hasn't written its first
     turn yet stays visible."""
     projects_dir, _ = _setup(monkeypatch, tmp_path)
-    proj = projects_dir / "-home-u"
+    proj = projects_dir / "-home-user"
     _write_sidecar(proj, "new-ghost", age_s=5)  # 5s < 15s grace
     kept = P.drop_empty_sessions(
         P.discover_local_sessions(), live_ids=set(), now=_NOW
@@ -188,7 +188,7 @@ def test_drop_keeps_live_ghost(monkeypatch, tmp_path):
     """A sidecar-only session Helios is actively driving (in live_ids) is kept
     even when old — the chat you just started never winks out."""
     projects_dir, _ = _setup(monkeypatch, tmp_path)
-    proj = projects_dir / "-home-u"
+    proj = projects_dir / "-home-user"
     _write_sidecar(proj, "live-ghost", age_s=3600)
     kept = P.drop_empty_sessions(
         P.discover_local_sessions(), live_ids={"live-ghost"}, now=_NOW
@@ -203,7 +203,7 @@ def test_drop_keeps_pinned_selected_ghost(monkeypatch, tmp_path):
     under them. Modeled here at the pure-function layer: a ghost whose id is
     pinned is kept even with no live driver and past the grace."""
     projects_dir, _ = _setup(monkeypatch, tmp_path)
-    proj = projects_dir / "-home-u"
+    proj = projects_dir / "-home-user"
     _write_sidecar(proj, "selected-ghost", age_s=3600)
     # keep set = live_ids (empty) | {selected_id}
     kept = P.drop_empty_sessions(
@@ -216,7 +216,7 @@ def test_drop_never_projects_descendant_as_primary_session_row(monkeypatch, tmp_
     """The Agent Dock owns descendants, even when their file is live/recent."""
 
     projects_dir, _ = _setup(monkeypatch, tmp_path)
-    proj = projects_dir / "-home-u"
+    proj = projects_dir / "-home-user"
     proj.mkdir(parents=True, exist_ok=True)
     child = proj / "child-agent.jsonl"
     child.write_text(_sidechain_line() + "\n", encoding="utf-8")
@@ -233,7 +233,7 @@ def test_drop_never_projects_descendant_as_primary_session_row(monkeypatch, tmp_
 
 def test_drop_keeps_mixed_root_transcript_with_sidechain_activity(monkeypatch, tmp_path):
     projects_dir, _ = _setup(monkeypatch, tmp_path)
-    proj = projects_dir / "-home-u"
+    proj = projects_dir / "-home-user"
     proj.mkdir(parents=True, exist_ok=True)
     root = proj / "root-session.jsonl"
     root.write_text(
@@ -257,21 +257,21 @@ def test_drop_keeps_mixed_root_transcript_with_sidechain_activity(monkeypatch, t
 def test_sweep_moves_sidecar_to_archive(monkeypatch, tmp_path):
     """Sidecar-only file older than 10 min is moved to the archive."""
     projects_dir, archive_root = _setup(monkeypatch, tmp_path)
-    proj = projects_dir / "-home-u"
+    proj = projects_dir / "-home-user"
     f = _write_sidecar(proj, "ghost", age_s=3600)
 
     n = P.sweep_orphan_sidecar_sessions(now=2_000_000.0)
 
     assert n == 1
     assert not f.exists(), "original must be gone after sweep"
-    dest = archive_root / "-home-u" / "ghost.jsonl"
+    dest = archive_root / "-home-user" / "ghost.jsonl"
     assert dest.exists(), "moved copy must exist in archive"
 
 
 def test_sweep_does_not_delete_real_session(monkeypatch, tmp_path):
     """Real sessions are never swept."""
     projects_dir, _ = _setup(monkeypatch, tmp_path)
-    proj = projects_dir / "-home-u"
+    proj = projects_dir / "-home-user"
     f = _write_real(proj, "real", age_s=3600)
 
     n = P.sweep_orphan_sidecar_sessions(now=2_000_000.0)
@@ -283,7 +283,7 @@ def test_sweep_does_not_delete_real_session(monkeypatch, tmp_path):
 def test_sweep_skips_live_id(monkeypatch, tmp_path):
     """Sidecar session whose id is in live_ids is left on disk."""
     projects_dir, _ = _setup(monkeypatch, tmp_path)
-    proj = projects_dir / "-home-u"
+    proj = projects_dir / "-home-user"
     f = _write_sidecar(proj, "live-sid", age_s=3600)
 
     n = P.sweep_orphan_sidecar_sessions(live_ids={"live-sid"}, now=2_000_000.0)
@@ -295,7 +295,7 @@ def test_sweep_skips_live_id(monkeypatch, tmp_path):
 def test_sweep_skips_recent_sidecar(monkeypatch, tmp_path):
     """Sidecar-only sessions younger than 10 min are not swept."""
     projects_dir, _ = _setup(monkeypatch, tmp_path)
-    proj = projects_dir / "-home-u"
+    proj = projects_dir / "-home-user"
     f = _write_sidecar(proj, "new-ghost", age_s=300)  # 5 min old
 
     n = P.sweep_orphan_sidecar_sessions(now=2_000_000.0)
@@ -307,7 +307,7 @@ def test_sweep_skips_recent_sidecar(monkeypatch, tmp_path):
 def test_sweep_clears_provider_entry(monkeypatch, tmp_path):
     """sweep_orphan_sidecar_sessions calls session_providers.forget."""
     projects_dir, _ = _setup(monkeypatch, tmp_path)
-    proj = projects_dir / "-home-u"
+    proj = projects_dir / "-home-user"
     _write_sidecar(proj, "ghost-openai", age_s=3600)
     SP.set_provider("ghost-openai", "openai")
 
@@ -319,7 +319,7 @@ def test_sweep_clears_provider_entry(monkeypatch, tmp_path):
 def test_sweep_moves_aux_dir_alongside(monkeypatch, tmp_path):
     """The aux dir (same stem, no suffix) is moved together with the .jsonl."""
     projects_dir, archive_root = _setup(monkeypatch, tmp_path)
-    proj = projects_dir / "-home-u"
+    proj = projects_dir / "-home-user"
     f = _write_sidecar(proj, "ghost", age_s=3600)
     aux = proj / "ghost"
     aux.mkdir()
@@ -329,23 +329,23 @@ def test_sweep_moves_aux_dir_alongside(monkeypatch, tmp_path):
 
     assert not f.exists()
     assert not aux.exists()
-    assert (archive_root / "-home-u" / "ghost.jsonl").exists()
-    assert (archive_root / "-home-u" / "ghost" / "extra.txt").exists()
+    assert (archive_root / "-home-user" / "ghost.jsonl").exists()
+    assert (archive_root / "-home-user" / "ghost" / "extra.txt").exists()
 
 
 def test_sweep_collision_gets_suffix(monkeypatch, tmp_path):
     """If archive destination already exists a .1 suffix is used."""
     projects_dir, archive_root = _setup(monkeypatch, tmp_path)
-    proj = projects_dir / "-home-u"
+    proj = projects_dir / "-home-user"
     f = _write_sidecar(proj, "ghost", age_s=3600)
 
     # Simulate a prior archive entry.
-    prior = archive_root / "-home-u"
+    prior = archive_root / "-home-user"
     prior.mkdir(parents=True)
     (prior / "ghost.jsonl").write_text("{}", encoding="utf-8")
 
     P.sweep_orphan_sidecar_sessions(now=2_000_000.0)
 
     assert not f.exists()
-    assert (archive_root / "-home-u" / "ghost.1.jsonl").exists()
-    assert (archive_root / "-home-u" / "ghost.jsonl").exists()  # prior untouched
+    assert (archive_root / "-home-user" / "ghost.1.jsonl").exists()
+    assert (archive_root / "-home-user" / "ghost.jsonl").exists()  # prior untouched

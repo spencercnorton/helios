@@ -111,24 +111,24 @@ def _write_session(proj_dir, name: str, cwd: str, mtime: float) -> None:
 
 def test_discover_local_sessions_merges_newest_first(tmp_path, monkeypatch):
     monkeypatch.setattr(P, "PROJECTS_DIR", tmp_path)
-    a = tmp_path / "-home-u"
-    b = tmp_path / "-home-u-proj"
-    _write_session(a, "old", "/home/u", 1000.0)
-    _write_session(a, "newest", "/home/u", 3000.0)
-    _write_session(b, "middle", "/home/u/proj", 2000.0)
+    a = tmp_path / "-home-user"
+    b = tmp_path / "-home-user-proj"
+    _write_session(a, "old", "/home/user", 1000.0)
+    _write_session(a, "newest", "/home/user", 3000.0)
+    _write_session(b, "middle", "/home/user/proj", 2000.0)
 
     sessions = P.discover_local_sessions()
     assert [s.session_id for s in sessions] == ["newest", "middle", "old"]
     # Sessions keep their project backref (origin metadata for the row chips).
-    assert sessions[1].project.cwd == "/home/u/proj"
+    assert sessions[1].project.cwd == "/home/user/proj"
     assert all(not s.project.read_only for s in sessions)
 
 
 def test_discover_pool_sessions_skips_self_host(tmp_path, monkeypatch):
     monkeypatch.setattr(P, "POOL_ROOT", tmp_path)
     monkeypatch.setattr(P, "_self_pool_host", lambda: "workstation")
-    _write_session(tmp_path / "workstation" / "-home-u", "mine", "/home/u", 1000.0)
-    _write_session(tmp_path / "macbook" / "-Users-x", "theirs", "/Users/x", 2000.0)
+    _write_session(tmp_path / "workstation" / "-home-user", "mine", "/home/user", 1000.0)
+    _write_session(tmp_path / "macbook" / "-Users-test", "theirs", "/Users/test", 2000.0)
 
     sessions = P.discover_pool_sessions()
     assert [s.session_id for s in sessions] == ["theirs"]
@@ -142,13 +142,13 @@ def test_pool_sessions_exclude_only_proven_descendant_transcripts(
 ):
     monkeypatch.setattr(P, "POOL_ROOT", tmp_path)
     monkeypatch.setattr(P, "_self_pool_host", lambda: "workstation")
-    project = tmp_path / "macbook" / "-Users-x"
-    _write_session(project, "root", "/Users/x", 1000.0)
+    project = tmp_path / "macbook" / "-Users-test"
+    _write_session(project, "root", "/Users/test", 1000.0)
 
     sidechain = json.dumps(
         {
             "type": "assistant",
-            "cwd": "/Users/x",
+            "cwd": "/Users/test",
             "isSidechain": True,
             "message": {"role": "assistant", "content": "child work"},
         }
@@ -162,7 +162,7 @@ def test_pool_sessions_exclude_only_proven_descendant_transcripts(
         + json.dumps(
             {
                 "type": "user",
-                "cwd": "/Users/x",
+                "cwd": "/Users/test",
                 "message": {"role": "user", "content": "root request"},
             }
         )
@@ -205,7 +205,7 @@ def test_ensure_local_project_creates_dir(tmp_path, monkeypatch):
 
 def test_ensure_local_project_picks_up_existing_sessions(tmp_path, monkeypatch):
     monkeypatch.setattr(P, "PROJECTS_DIR", tmp_path)
-    cwd = "/home/u/thing"
+    cwd = "/home/user/thing"
     d = tmp_path / P.encode_project_dirname(cwd)
     _write_session(d, "s1", cwd, 1000.0)
     proj = P.ensure_local_project(cwd)
@@ -242,7 +242,7 @@ def test_archive_skips_non_throwaway(tmp_path, monkeypatch):
     projects, _ = _archive_env(tmp_path, monkeypatch)
     # NOT under tmp_path: pytest tmp dirs live in /tmp, which is itself a
     # throwaway prefix. This cwd is gone and old — but a real project path.
-    gone_cwd = "/home/u/real-project-c9e1a"
+    gone_cwd = "/home/user/real-project-c9e1a"
     d = projects / P.encode_project_dirname(gone_cwd)
     _write_session(d, "s1", gone_cwd, _OLD)
     assert P.archive_stale_throwaways(now=_NOW) == 0

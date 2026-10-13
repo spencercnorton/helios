@@ -102,7 +102,7 @@ _MEASURED = {
     "categories": [{"name": "System prompt", "tokens": 4268}, {"name": "Free space", "tokens": 974194}],
     "totalTokens": 25806,
     "maxTokens": 1000000,
-    "memoryFiles": [{"path": "/home/x/.claude/CLAUDE.md", "type": "User", "tokens": 7913}],
+    "memoryFiles": [{"path": "/home/test/.claude/CLAUDE.md", "type": "User", "tokens": 7913}],
     "skills": {
         "totalSkills": 23,
         "includedSkills": 23,
@@ -131,7 +131,7 @@ def test_measured_details_keep_files_skills_agents_and_the_threshold():
     """The 2.1.258 ``/context`` payload shape."""
     details = cb.details_from_measured(_MEASURED)
     assert details is not None
-    assert details.memory_files == (("/home/x/.claude/CLAUDE.md", 7913),)
+    assert details.memory_files == (("/home/test/.claude/CLAUDE.md", 7913),)
     assert details.skills[0] == ("house-style", 279)
     assert details.skills_count == 23 and details.skills_total == 3715
     assert details.agents == (("gpt", 328), ("implementer", 230))
@@ -139,7 +139,7 @@ def test_measured_details_keep_files_skills_agents_and_the_threshold():
     assert details.autocompact_threshold == 967000
     assert details.autocompact_enabled is True
 
-    lines = cb.describe_details(details, 1000000, home="/home/x")
+    lines = cb.describe_details(details, 1000000, home="/home/test")
     assert lines[0].startswith("Memory files: 7,913 tokens — ~/.claude/CLAUDE.md 7,913")
     assert "Skills: 23 loaded, 3,715 tokens — largest house-style 279" in lines[1]
     assert lines[2] == "Custom agents: gpt 328, implementer 230"
