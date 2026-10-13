@@ -33,7 +33,11 @@ from helios.backend import model_catalog
 from helios.backend.muse_binary import MuseBinaryNotFound, find_muse_binary
 from helios.backend.muse_env import CLIENT_NAME, uuid7
 from helios.backend.process.codex_transcript import CodexTranscriptWriter
-from helios.backend.process.env_scrub import MUSE_AUTH_ENV, scrubbed_child_env
+from helios.backend.process.env_scrub import (
+    MUSE_AUTH_ENV,
+    NORVI_TRACKER_ENV,
+    scrubbed_child_env,
+)
 from helios.backend.process.message_queue import (
     ExecutionAcceptanceEvidence, ExecutionDispatchEvidence,
     ExecutionTerminalEvidence, MessageDelivery, RequiredPromptContextError,
@@ -95,6 +99,23 @@ def _parse_args(raw: Any) -> Any:
 
 class MuseDriverSpawnError(RuntimeError):
     """Native Muse session could not be started."""
+
+
+# The tracker grant every interactive provider gets (Infisical stays Claude-only).
+MUSE_INTERACTIVE_ENV = MUSE_AUTH_ENV | NORVI_TRACKER_ENV
+
+
+def serve_args(model: str, permission_mode: str) -> list[str]:
+    """`muse serve` argv; sandbox posture is fixed at spawn, never on the wire."""
+    args = ["serve", "--provider", "meta", "--model", model, "--trust-workspace"]
+    if permission_mode == "plan":
+        args += ["--disable-write", "--disable-shell"]  # honestly read-only
+    elif permission_mode == "bypassPermissions":
+        # Bypass = full access, like Codex danger-full-access. Also the only
+        # working shell on Ubuntu: Muse rejects stock bwrap (no
+        # --ro-bind-symlink) and its embedded bwrap is denied a user namespace.
+        args.append("--disable-sandbox")
+    return args
 
 
 class MuseServeDriver(UserMessageQueueMixin, GObject.Object):
@@ -262,16 +283,12 @@ class MuseServeDriver(UserMessageQueueMixin, GObject.Object):
             binary = find_muse_binary()
         except MuseBinaryNotFound as exc:
             raise MuseDriverSpawnError(str(exc)) from exc
-        cmd = [str(binary.path), "serve", "--provider", "meta", "--model", self._model,
-               "--trust-workspace"]
-        if self._permission_mode == "plan":
-            # Sandbox posture is fixed at spawn; Plan is honestly read-only.
-            cmd.extend(["--disable-write", "--disable-shell"])
+        cmd = [str(binary.path), *serve_args(self._model, self._permission_mode)]
         try:
             self._proc = subprocess.Popen(
                 cmd, cwd=self._cwd, stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                env=scrubbed_child_env(keep=MUSE_AUTH_ENV),
+                env=scrubbed_child_env(keep=MUSE_INTERACTIVE_ENV),
                 bufsize=0, start_new_session=True)
         except OSError as exc:
             raise MuseDriverSpawnError("Could not start `muse serve`.") from exc
