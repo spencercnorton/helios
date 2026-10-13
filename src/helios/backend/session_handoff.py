@@ -35,6 +35,7 @@ _PROVIDER_LABELS = {
     model_catalog.PROVIDER_ANTHROPIC: "Claude",
     model_catalog.PROVIDER_OPENAI: "GPT",
     model_catalog.PROVIDER_GOOGLE: "Google",
+    model_catalog.PROVIDER_MUSE: "Muse",
     model_catalog.PROVIDER_OPENROUTER: "OpenRouter",
 }
 

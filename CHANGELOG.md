@@ -8,6 +8,14 @@ source (`source.tar.gz`) and `SHA256SUMS.txt`.
 
 - Clarify agent setup prerequisites, working-directory fallbacks and error-message formatting.
 
+## 0.103.1 — 2026-10-13
+
+- Fix Muse sessions being rejected as an "unsafe provider identity" on
+  send: the window's provider allowlist missed Muse, so every Muse
+  session was torn down unsent. Muse also joins transcript-detach,
+  session-handoff labels, and the work-store concurrency lanes at parity
+  with the other native providers.
+
 ## 0.103.0 — 2026-10-12
 
 - Make model selection navigable: the chat picker always shows its search
