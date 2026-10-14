@@ -862,3 +862,106 @@ def test_new_chat_with_provider_toast_names_openrouter():
     assert toasts == [
         "No OpenRouter models available — add a key in Settings → Providers."
     ]
+
+
+def test_catalog_completion_adopts_pending_session_provider():
+    muse_entry = model_catalog.ModelEntry(
+        "muse-spark",
+        "Muse Spark",
+        "Muse",
+        provider=model_catalog.PROVIDER_MUSE,
+    )
+    google_entry = model_catalog.ModelEntry(
+        "gemini-4-argon",
+        "Gemini 4 Argon",
+        "Google",
+        provider=model_catalog.PROVIDER_GOOGLE,
+    )
+    chosen: list[tuple[str, bool]] = []
+    fake = types.SimpleNamespace(
+        _catalog_refresh_running=True,
+        _catalog_force_pending=False,
+        _destroyed=False,
+        _driver=None,
+        _model=google_entry.id,
+        _provider_models={},
+        _catalog_entries_by_id={},
+        _openai_entries=[],
+        _next_chat=ChatTarget(
+            project=types.SimpleNamespace(cwd="/repo", read_only=False),
+            resume_id="muse-session-1",
+            work_id="work-1",
+            resume_provider=model_catalog.PROVIDER_MUSE,
+        ),
+        _chat_toolbar=types.SimpleNamespace(set_choices=lambda _entries: None),
+        _gpt_toggle=_Toggle(),
+        _normalize_openai_model_memory=lambda: None,
+        _sync_effort_sensitivity=lambda: None,
+        _sync_execution_control=lambda: None,
+        _sync_new_chat_actions=lambda: None,
+    )
+    fake._selected_provider = types.MethodType(MainWindow._selected_provider, fake)
+    fake._model_for_provider = types.MethodType(MainWindow._model_for_provider, fake)
+    fake._adopt_session_provider = types.MethodType(
+        MainWindow._adopt_session_provider, fake
+    )
+
+    def apply_choice(alias: str, *, quiet: bool = False) -> None:
+        fake._model = alias
+        chosen.append((alias, quiet))
+
+    fake._apply_model_choice = apply_choice
+
+    # Startup selection runs before the catalog worker has returned muse-spark.
+    fake._adopt_session_provider(model_catalog.PROVIDER_MUSE)
+    assert fake._model == google_entry.id
+    assert fake._pending_session_provider_adoption == model_catalog.PROVIDER_MUSE
+
+    # Once the catalog worker finishes, _apply_model_catalog adopts Muse for the
+    # staged session so the next send resumes Muse instead of switching to Google.
+    types.MethodType(MainWindow._apply_model_catalog, fake)(
+        [google_entry, muse_entry],
+        False,
+    )
+
+    assert fake._model == muse_entry.id
+    assert chosen == [(muse_entry.id, True)]
+    assert fake._pending_session_provider_adoption == ""
+
+
+def test_ensure_driver_blocks_cross_provider_hijack_while_startup_catalog_loads():
+    assert mw.session_providers.set_provider(
+        "muse-session-1",
+        model_catalog.PROVIDER_MUSE,
+    )
+    toasts: list[str] = []
+    target = ChatTarget(
+        project=types.SimpleNamespace(cwd="/repo", read_only=False),
+        resume_id="muse-session-1",
+        work_id="work-1",
+        resume_provider=model_catalog.PROVIDER_MUSE,
+    )
+    fake = types.SimpleNamespace(
+        _model="gemini-4-argon",
+        _provider_models={},
+        _catalog_entries_by_id={},
+        _openai_entries=[],
+        _catalog_refresh_running=True,
+        _pending_session_provider_adoption=model_catalog.PROVIDER_MUSE,
+        _next_chat=target,
+        _driver=None,
+        _work_coordinator=None,
+        _toast=toasts.append,
+    )
+    fake._selected_provider = types.MethodType(MainWindow._selected_provider, fake)
+    fake._model_for_provider = types.MethodType(MainWindow._model_for_provider, fake)
+    fake._adopt_session_provider = types.MethodType(
+        MainWindow._adopt_session_provider, fake
+    )
+
+    assert MainWindow._ensure_driver(fake) is False
+    assert toasts == [
+        "Helios is still loading provider models for this session — "
+        "try sending again in a moment."
+    ]
+    assert fake._next_chat is target

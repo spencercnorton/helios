@@ -6,6 +6,11 @@ source (`source.tar.gz`) and `SHA256SUMS.txt`.
 
 ## Unreleased
 
+## 0.104.1 — 2026-10-14
+
+- Re-adopt a staged session's provider when the background model catalog finishes loading at startup, and block cross-provider sends while the initial catalog is still probing so resuming a Muse or Google session cannot switch to a stale persisted model or start a fresh contextless session.
+- Keep initializing Muse and Google resume drivers (`is_initializing`) bound across sidebar refreshes, session routing, and `DriverManager` lookups before `session-started` arrives, preventing duplicate resume processes.
+
 ## 0.104.0 — 2026-10-13
 
 - Ship `helios-router-mcp`, `helios-estate-mcp`, and `setup-codex-estate` in

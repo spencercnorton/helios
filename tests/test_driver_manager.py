@@ -266,3 +266,19 @@ def test_drivers_for_work_includes_live_and_starting_siblings_only():
     assert mgr.drivers_for_work("work-1") == {claude, codex}
     assert mgr.drivers_for_work("work-2") == {unrelated}
     assert mgr.drivers_for_work("") == set()
+
+
+def test_initializing_resume_driver_is_found_by_session_and_work_before_session_bound():
+    mgr = DriverManager(max_live=4, idle_seconds=60)
+    starting = FakeDriver("", accepting=False, busy=True)
+    starting.is_initializing = True
+    starting.provider = "muse"
+    starting._helios_expected_resume_id = "muse-resume-1"
+    starting._helios_work_id = "work-1"
+    starting._helios_participant_provider = "muse"
+    starting._helios_participant_generation = 1
+    mgr.add_starting(starting, [1])
+
+    assert mgr.driver_for_session("muse-resume-1") is starting
+    assert mgr.driver_for_work_participant("work-1", "muse", generation=1) is starting
+    assert mgr.live_ids() == {"muse-resume-1"}
