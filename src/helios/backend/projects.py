@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from helios.paths import bind_state_paths
 from helios.backend.transcript import (
     session_has_content,
     session_is_descendant_only,
@@ -423,7 +424,7 @@ def sweep_orphan_sidecar_sessions(
                 continue
             # Move the sidecar to the archive.
             try:
-                dest_dir = HELIOS_ARCHIVE_ROOT / proj_dir.name
+                dest_dir = _self.HELIOS_ARCHIVE_ROOT / proj_dir.name
                 dest_dir.mkdir(parents=True, exist_ok=True)
                 dest = _unique_sidecar_path(dest_dir / f.name)
                 shutil.move(str(f), str(dest))
@@ -440,7 +441,8 @@ def sweep_orphan_sidecar_sessions(
 
 # Archive destination for sidecar orphans — mirrors session_archiver.ARCHIVE_ROOT
 # but under a different subdirectory name so the two sweeps don't collide.
-HELIOS_ARCHIVE_ROOT = Path.home() / ".helios" / "session-archive"
+HELIOS_ARCHIVE_ROOT: Path
+_self = bind_state_paths(__name__, HELIOS_ARCHIVE_ROOT="session-archive")
 
 
 def _unique_sidecar_path(path: Path) -> Path:

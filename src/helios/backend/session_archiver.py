@@ -28,12 +28,14 @@ from helios.backend.projects import Session
 from helios.backend.session_state import discover_active_session_ids
 from helios.backend.transcript import parse_transcript
 from helios.log import get_logger
+from helios.paths import bind_state_paths
 
 _log = get_logger("session-archiver")
 
 RETENTION_DAYS = 4
 RETENTION_SECONDS = RETENTION_DAYS * 86400
-ARCHIVE_ROOT = Path.home() / ".helios" / "session-archive"
+ARCHIVE_ROOT: Path
+_self = bind_state_paths(__name__, ARCHIVE_ROOT="session-archive")
 MAX_PER_RUN = 8
 SUMMARY_MAX_BUDGET_USD = 0.25
 
@@ -232,7 +234,7 @@ def _write_memory_if_useful(session: Session, summary: str) -> Path | None:
 
 
 def _move_session_to_archive(session: Session) -> Path:
-    dest_dir = ARCHIVE_ROOT / session.project.dirname
+    dest_dir = _self.ARCHIVE_ROOT / session.project.dirname
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = _unique_path(dest_dir / session.path.name)
     shutil.move(str(session.path), str(dest))

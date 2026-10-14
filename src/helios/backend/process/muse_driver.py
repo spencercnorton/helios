@@ -31,6 +31,7 @@ from gi.repository import GLib, GObject
 
 from helios.backend import model_catalog
 from helios.backend.muse_binary import MuseBinaryNotFound, find_muse_binary
+from helios.backend import muse_env
 from helios.backend.muse_env import CLIENT_NAME, uuid7
 from helios.backend.process.codex_transcript import CodexTranscriptWriter
 from helios.backend.process.env_scrub import (
@@ -180,7 +181,7 @@ class MuseServeDriver(UserMessageQueueMixin, GObject.Object):
         self._pending_inputs: dict[str, dict] = {}
         self._transcript = CodexTranscriptWriter(cwd, provider=model_catalog.PROVIDER_MUSE)
         self.init_tools: list[str] = []
-        self.init_mcp_servers: dict[str, Any] = {}
+        self.init_mcp_servers: list[dict[str, Any]] = []
 
     @property
     def is_running(self) -> bool:
@@ -341,12 +342,34 @@ class MuseServeDriver(UserMessageQueueMixin, GObject.Object):
         except Exception:
             self._hold_accounting_failure("Helios could not save the Muse session identity. The session remains blocked.")
             return
+        raw_tools = session.get("tools")
+        if isinstance(raw_tools, list):
+            self.init_tools = [
+                str(t.get("name") if isinstance(t, dict) else t)
+                for t in raw_tools
+                if (isinstance(t, dict) and t.get("name")) or isinstance(t, str)
+            ]
+        elif not self.init_tools:
+            self.init_tools = list(_TOOL_NAMES.values())
+        raw_mcp = session.get("mcpServers") or session.get("mcp_servers")
+        if isinstance(raw_mcp, list):
+            self.init_mcp_servers = [dict(row) for row in raw_mcp if isinstance(row, dict)]
+        else:
+            self.init_mcp_servers = [
+                {"name": s["name"], "status": "configured"}
+                for s in muse_env.list_mcp_servers()
+                if isinstance(s, dict) and s.get("name")
+            ]
         self._session_id = sid
         self._last_activity = time.monotonic()
         self._accepting_input = True
         pending, self._startup_pending_text = self._startup_pending_text, None
         self._is_busy = False
         self.emit("session-started", sid, self._cwd, self._model)
+        self.emit(
+            "capabilities-updated",
+            {"tools": list(self.init_tools), "mcp_servers": list(self.init_mcp_servers)},
+        )
         if pending:
             self.send_user_text(pending, _reuse_execution_attempt=True)
 

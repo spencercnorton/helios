@@ -295,10 +295,35 @@ def tool_names() -> frozenset[str]:
     return frozenset(str(tool["name"]) for tool in TOOL_DEFINITIONS)
 
 
-def router_mcp_launcher_path() -> Path:
-    """Return the trusted repo launcher used by native Claude sessions."""
+PACKAGED_ROUTER_MCP_LAUNCHER = Path("/usr/lib/helios/helios-router-mcp")
 
-    return Path(__file__).resolve().parents[3] / "scripts" / "helios-router-mcp"
+
+def router_mcp_launcher_path(
+    *,
+    repo_launcher: Path | None = None,
+    packaged_launcher: Path | None = None,
+) -> Path:
+    """Return the trusted launcher used by native Claude sessions.
+
+    Checks the source-checkout ``scripts/helios-router-mcp`` path first, then
+    the ``.deb`` packaged location ``/usr/lib/helios/helios-router-mcp``.
+    """
+
+    repo_candidate = (
+        repo_launcher
+        if repo_launcher is not None
+        else Path(__file__).resolve().parents[3] / "scripts" / "helios-router-mcp"
+    )
+    if repo_candidate.is_file():
+        return repo_candidate
+    pkg_candidate = (
+        packaged_launcher
+        if packaged_launcher is not None
+        else PACKAGED_ROUTER_MCP_LAUNCHER
+    )
+    if pkg_candidate.is_file():
+        return pkg_candidate
+    return repo_candidate
 
 
 def claude_mcp_config(

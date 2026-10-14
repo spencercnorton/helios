@@ -13,20 +13,23 @@ from pathlib import Path
 from threading import Lock
 
 from helios.log import get_logger
+from helios.paths import bind_state_paths
 
 _log = get_logger("titlegen")
 
-_CACHE_PATH = Path.home() / ".helios" / "title-cache.json"
+_CACHE_PATH: Path
+_self = bind_state_paths(__name__, _CACHE_PATH="title-cache.json")
 _CACHE_LOCK = Lock()
 
 # ── Cache ────────────────────────────────────────────────────────────────
 
 
 def _load_cache() -> dict[str, str]:
-    if not _CACHE_PATH.is_file():
+    cache_path = _self._CACHE_PATH
+    if not cache_path.is_file():
         return {}
     try:
-        data = json.loads(_CACHE_PATH.read_text(encoding="utf-8"))
+        data = json.loads(cache_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
     if not isinstance(data, dict):
@@ -38,16 +41,17 @@ def _save_cache(data: dict[str, str]) -> None:
     # See project_names._save for rationale on 0700/0600.
     # Note: mkdir(exist_ok=True, mode=...) skips mode on existing dirs, so we
     # chmod separately to ensure 0700 even on pre-created directories.
+    cache_path = _self._CACHE_PATH
     try:
-        _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            os.chmod(_CACHE_PATH.parent, 0o700)
+            os.chmod(cache_path.parent, 0o700)
         except OSError:
             pass
-        tmp = _CACHE_PATH.with_suffix(".json.tmp")
+        tmp = cache_path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
         os.chmod(tmp, 0o600)
-        tmp.replace(_CACHE_PATH)
+        tmp.replace(cache_path)
     except OSError as e:
         # Disk full / read-only ~/.helios must never escape into the caller
         # (a UI thread); atomic tmp+replace leaves any existing cache intact.
@@ -58,6 +62,7 @@ class TitleStore:
     """Thread-safe persistent map of session_id -> generated title."""
 
     def __init__(self) -> None:
+        self._path = _self._CACHE_PATH
         with _CACHE_LOCK:
             self._data = _load_cache()
 
@@ -103,8 +108,9 @@ def store() -> TitleStore:
     build an instance if they first touch the store concurrently — the loser's
     instance would otherwise be discarded and any write through it lost."""
     global _store_singleton
-    if _store_singleton is None:
+    default_path = _self._CACHE_PATH
+    if _store_singleton is None or _store_singleton._path != default_path:
         with _STORE_LOCK:
-            if _store_singleton is None:
+            if _store_singleton is None or _store_singleton._path != default_path:
                 _store_singleton = TitleStore()
     return _store_singleton

@@ -625,19 +625,22 @@ class ClaudeCliDriver(UserMessageQueueMixin, GObject.Object):
         # outside Claude's native --max-budget-usd cap, so the Work supervisor
         # remains the follow-on that makes it accountable.
         router_launcher = router_mcp_launcher_path()
-        if not router_launcher.is_file():
-            _log.warning("Helios Router MCP launcher is missing: %s", router_launcher)
-        elif dispatch_available():
-            argv.extend(
-                [
-                    "--mcp-config",
-                    claude_mcp_config(
-                        self._router_binding_id,
-                        socket_path=str(router_socket_path()),
-                        launcher_path=str(router_launcher),
-                    ),
-                ]
-            )
+        if dispatch_available():
+            if not router_launcher.is_file():
+                _log.warning("Helios Router MCP launcher is missing: %s", router_launcher)
+            else:
+                argv.extend(
+                    [
+                        "--mcp-config",
+                        claude_mcp_config(
+                            self._router_binding_id,
+                            socket_path=str(router_socket_path()),
+                            launcher_path=str(router_launcher),
+                        ),
+                    ]
+                )
+        elif not router_launcher.is_file():
+            _log.debug("Helios Router MCP launcher is missing (broker inactive): %s", router_launcher)
         if self._model:
             argv.extend(["--model", self._model])
         if self._resume:

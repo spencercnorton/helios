@@ -324,6 +324,7 @@ def test_only_interactive_sessions_get_the_tracker_token():
     assert granting == [
         "backend/process/cli_driver.py",  # Claude
         "backend/process/codex_app_server.py",  # GPT, and its tool children
+        "backend/process/gemini_driver.py",  # Google
         "backend/process/muse_driver.py",  # Muse
         "backend/process/openrouter_tools.py",  # OpenRouter's Bash tool
     ], granting

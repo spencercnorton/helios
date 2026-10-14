@@ -174,3 +174,22 @@ def test_serve_args_follow_permission_mode():
     plan = serve_args("muse-x", "plan")
     assert "--disable-shell" in plan and "--disable-sandbox" not in plan
     assert {"META_API_KEY", "NORVI_TRACKER_API_TOKEN"} <= MUSE_INTERACTIVE_ENV
+
+
+
+def test_session_bound_populates_tools_and_emits_capabilities(tmp_path, monkeypatch):
+    from helios.backend import muse_env
+
+    monkeypatch.setattr(
+        muse_env,
+        "list_mcp_servers",
+        lambda: [{"name": "code-intel", "command": "python3", "args": []}],
+    )
+    driver = MuseServeDriver(cwd=str(tmp_path), model=MODEL)
+    driver._proc = _FakeProcess()
+    caps = []
+    driver.connect("capabilities-updated", lambda _d, payload: caps.append(payload))
+    driver._on_session_bound({"sessionId": "s-123", "modelId": MODEL, "workspaceRoot": str(tmp_path)})
+    assert driver.init_tools
+    assert driver.init_mcp_servers == [{"name": "code-intel", "status": "configured"}]
+    assert caps and caps[0]["mcp_servers"] == [{"name": "code-intel", "status": "configured"}]

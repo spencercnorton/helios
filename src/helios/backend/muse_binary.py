@@ -53,6 +53,7 @@ def find_muse_binary() -> MuseBinary:
         candidate = Path(env).expanduser()
         if _is_runnable(candidate):
             return MuseBinary(path=candidate, source="env")
+        raise MuseBinaryNotFound("$HELIOS_MUSE_BINARY is not an executable file.")
 
     on_path = shutil.which("muse")
     if on_path:

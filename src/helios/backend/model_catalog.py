@@ -49,6 +49,7 @@ from typing import TYPE_CHECKING
 from helios.backend.process.env_scrub import scrubbed_child_env
 
 from helios.log import get_logger
+from helios.paths import bind_state_paths
 
 if TYPE_CHECKING:
     from helios.backend.codex_env import CodexAuth
@@ -56,7 +57,8 @@ if TYPE_CHECKING:
 
 _log = get_logger("models")
 
-_CATALOG_CACHE = Path.home() / ".helios" / "model-catalog.json"
+_CATALOG_CACHE: Path
+_self = bind_state_paths(__name__, _CATALOG_CACHE="model-catalog.json")
 # Bump whenever the Anthropic picker policy changes, so a catalog cached under
 # the old policy is rebuilt instead of served. rev 2 restores the 1M aliases and
 # the settings-owned default that rev 1 (P0 containment) filtered out.
@@ -311,7 +313,7 @@ def anthropic_entries(*, force: bool = False) -> list[ModelEntry]:
     except Exception:
         return list(FALLBACK_ANTHROPIC)
 
-    cached = _read_json(_CATALOG_CACHE)
+    cached = _read_json(_self._CATALOG_CACHE)
     if (
         not force
         and cached.get("fingerprint") == fp
@@ -328,7 +330,7 @@ def anthropic_entries(*, force: bool = False) -> list[ModelEntry]:
         _log.warning("model discovery failed (%s); using fallback list", e)
         return list(FALLBACK_ANTHROPIC)
 
-    _write_json(_CATALOG_CACHE, {
+    _write_json(_self._CATALOG_CACHE, {
         "fingerprint": fp,
         "anthropic_policy_rev": _ANTHROPIC_POLICY_REV,
         "scanned_at": int(time.time()),
@@ -357,7 +359,7 @@ def claude_binary_changed() -> bool:
         fp = _binary_fingerprint(find_claude_binary().path)
     except Exception:
         return False
-    cached = _read_json(_CATALOG_CACHE)
+    cached = _read_json(_self._CATALOG_CACHE)
     return (
         cached.get("fingerprint") != fp
         or cached.get("anthropic_policy_rev") != _ANTHROPIC_POLICY_REV

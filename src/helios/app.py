@@ -137,13 +137,24 @@ class HeliosApplication(Adw.Application):
 
     def _setup_actions(self) -> None:
         quit_act = Gio.SimpleAction.new("quit", None)
-        quit_act.connect("activate", lambda *_: self.quit())
+        quit_act.connect("activate", self._on_quit)
         self.add_action(quit_act)
         self.set_accels_for_action("app.quit", ["<Primary>q"])
 
         about_act = Gio.SimpleAction.new("about", None)
         about_act.connect("activate", self._show_about)
         self.add_action(about_act)
+
+    def _on_quit(self, *_args) -> None:
+        for window in list(self.get_windows()):
+            on_close = getattr(window, "_on_close_request", None)
+            if callable(on_close):
+                on_close()
+            try:
+                window.close()
+            except Exception:
+                pass
+        self.quit()
 
     def _show_about(self, *_args) -> None:
         window = self.props.active_window

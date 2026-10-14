@@ -325,3 +325,61 @@ def test_instruction_budget_and_bad_encoding_fail_instead_of_truncating(tmp_path
         compile_instructions(str(tmp_path), global_path=global_file)
     with pytest.raises(InstructionContextError, match="native"):
         compile_instructions(str(tmp_path), provider="openai")
+
+
+def test_estate_policy_omits_retired_local_model_tools_and_upgrades_legacy_v2(tmp_path):
+    from helios.backend.estate_setup import LEGACY_V2_POLICY
+
+    assert "local-model" not in ESTATE_POLICY
+    assert "recent_calls" not in ESTATE_POLICY
+    assert "mark_outcome" not in ESTATE_POLICY
+
+    home = tmp_path / "user"
+    (home / ".codex").mkdir(parents=True)
+    (home / ".claude.json").write_text(json.dumps({"mcpServers": {"ollama": {"command": sys.executable}}}))
+    agents = home / ".codex/AGENTS.md"
+    agents.write_text("Header\n" + LEGACY_V2_POLICY + "Footer\n")
+    repo = Path(__file__).resolve().parents[1]
+    changes, _ = plan_setup(home=home, repo=repo)
+    apply_changes(changes)
+    updated = agents.read_text()
+    assert "recent_calls" not in updated
+    assert ESTATE_POLICY in updated
+
+
+def test_setup_upgrades_v1_manifest_and_syncs_gemini_and_muse_without_secrets(tmp_path):
+    home = tmp_path / "user"
+    (home / ".codex").mkdir(parents=True)
+    (home / ".helios").mkdir(parents=True)
+    (home / ".gemini/config").mkdir(parents=True)
+    (home / ".config/muse").mkdir(parents=True)
+    (home / ".gemini/config/mcp_config.json").write_text("")  # 0-byte file
+    (home / ".config/muse/settings.json").write_text(json.dumps({"mcpServers": {
+        "dispatch": {"command": sys.executable, "env": {"DISPATCH_KEY": "leaked-inline-secret"}},
+        "stale-proxy": {"command": sys.executable, "args": ["/old/helios-estate-mcp", "--server", "stale-proxy"]},
+    }}))
+    (home / ".claude.json").write_text(json.dumps({"mcpServers": {"dispatch": {
+        "command": sys.executable, "args": ["example.py"],
+        "env": {"DISPATCH_KEY": "fixture-source-secret"}}}}))
+    (home / ".helios/estate-mcp.json").write_text(json.dumps({"version": 1, "servers": {}}))
+    repo = Path(__file__).resolve().parents[1]
+    changes, _ = plan_setup(
+        home=home, repo=repo, replace_manifest=True, sync_gemini=True, sync_muse=True
+    )
+    assert all("fixture-source-secret" not in c.addition for c in changes)
+    assert all("leaked-inline-secret" not in c.addition for c in changes)
+    apply_changes(changes)
+    manifest = json.loads((home / ".helios/estate-mcp.json").read_text())
+    assert manifest["version"] == 2
+    assert manifest["servers"] == {"dispatch": ["DISPATCH_KEY"]}
+    gemini_cfg = json.loads((home / ".gemini/config/mcp_config.json").read_text())
+    muse_cfg = json.loads((home / ".config/muse/settings.json").read_text())
+    assert "dispatch" in gemini_cfg["mcpServers"]
+    assert "dispatch" in muse_cfg["mcpServers"]
+    assert "stale-proxy" not in muse_cfg["mcpServers"]
+    assert muse_cfg["mcpServers"]["dispatch"]["type"] == "stdio"
+    assert muse_cfg["mcpServers"]["dispatch"]["mode"] == "optional"
+    assert "env" not in muse_cfg["mcpServers"]["dispatch"]
+    assert "fixture-source-secret" not in json.dumps(gemini_cfg)
+    assert "fixture-source-secret" not in json.dumps(muse_cfg)
+    assert "leaked-inline-secret" not in json.dumps(muse_cfg)

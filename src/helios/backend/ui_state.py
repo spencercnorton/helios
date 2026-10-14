@@ -20,10 +20,12 @@ from threading import Lock
 from typing import Any
 
 from helios.log import get_logger
+from helios.paths import bind_state_paths
 
 _log = get_logger("ui_state")
 
-_DEFAULT_PATH = Path.home() / ".helios" / "ui-state.json"
+_DEFAULT_PATH: Path
+_self = bind_state_paths(__name__, _DEFAULT_PATH="ui-state.json")
 _LOCK = Lock()
 
 # Model ids the user ticked in Settings → Providers → OpenRouter. These are the
@@ -71,7 +73,7 @@ class UiStateStore:
     """Thread-safe persistent key/value bag for window/layout state."""
 
     def __init__(self, path: Path | None = None) -> None:
-        self._path = path or _DEFAULT_PATH
+        self._path = path or _self._DEFAULT_PATH
         with _LOCK:
             self._data = _load(self._path)
 
@@ -104,7 +106,8 @@ _global: UiStateStore | None = None
 def store() -> UiStateStore:
     """Process-wide singleton."""
     global _global
-    if _global is None:
+    default_path = _self._DEFAULT_PATH
+    if _global is None or _global._path != default_path:
         _global = UiStateStore()
     return _global
 
