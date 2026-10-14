@@ -117,11 +117,21 @@ def _resolve_estate_script(repo: Path) -> Path:
     return repo_script
 
 
+def _is_estate_proxy_entry(entry: object) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    args = entry.get("args")
+    return isinstance(args, list) and any("helios-estate-mcp" in str(a) for a in args)
+
+
 def _plan_json_proxy_mcp(
     path: Path,
     chosen: list[str],
     script: Path,
     manifest_path: Path,
+    *,
+    replace_existing: bool = False,
+    include_muse_fields: bool = False,
 ) -> Change | None:
     before = _existing(path)
     data: dict = {}
@@ -140,17 +150,31 @@ def _plan_json_proxy_mcp(
         raise EstateConfigError(f"Existing mcpServers in {path} is invalid")
     else:
         servers = dict(servers)
+    chosen_set = set(chosen)
+    removed = False
+    if replace_existing:
+        for existing_name in list(servers):
+            if existing_name not in chosen_set and _is_estate_proxy_entry(servers[existing_name]):
+                del servers[existing_name]
+                removed = True
     added = {}
     for name in chosen:
+        entry: dict[str, object] = {}
+        if include_muse_fields:
+            entry["type"] = "stdio"
+            entry["mode"] = "optional"
+        entry["command"] = sys.executable
+        entry["args"] = [str(script), "--server", name, "--manifest", str(manifest_path)]
+        current = servers.get(name)
         if name in servers:
-            continue
-        entry = {
-            "command": sys.executable,
-            "args": [str(script), "--server", name, "--manifest", str(manifest_path)],
-        }
+            has_inline_env = isinstance(current, dict) and "env" in current
+            if not replace_existing and not has_inline_env and not _is_estate_proxy_entry(current):
+                continue
+            if current == entry:
+                continue
         servers[name] = entry
         added[name] = entry
-    if not added and before is not None and before.strip():
+    if not added and not removed and before is not None and before.strip():
         return None
     data["mcpServers"] = servers
     after_text = json.dumps(data, indent=2) + "\n"
@@ -235,13 +259,22 @@ def plan_setup(*, home: Path, repo: Path, source: Path | None = None,
             raise EstateConfigError("Managed estate policy was edited; preserve and review it manually")
     if sync_gemini:
         gemini_change = _plan_json_proxy_mcp(
-            home / ".gemini/config/mcp_config.json", chosen, script, manifest_path
+            home / ".gemini/config/mcp_config.json",
+            chosen,
+            script,
+            manifest_path,
+            replace_existing=replace_manifest,
         )
         if gemini_change is not None:
             changes.append(gemini_change)
     if sync_muse:
         muse_change = _plan_json_proxy_mcp(
-            home / ".config/muse/settings.json", chosen, script, manifest_path
+            home / ".config/muse/settings.json",
+            chosen,
+            script,
+            manifest_path,
+            replace_existing=replace_manifest,
+            include_muse_fields=True,
         )
         if muse_change is not None:
             changes.append(muse_change)
