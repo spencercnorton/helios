@@ -130,7 +130,18 @@ class DriverManager:
         self._emit_live_ids()
 
     def driver_for_session(self, session_id: str) -> Driver | None:
-        return self.live.get(session_id)
+        if not session_id:
+            return None
+        live = self.live.get(session_id)
+        if live is not None:
+            return live
+        for driver in self.handlers:
+            if (
+                _driver_is_active(driver)
+                and _driver_expected_session_id(driver) == session_id
+            ):
+                return driver
+        return None
 
     def driver_for_work_participant(
         self,
@@ -152,7 +163,7 @@ class DriverManager:
                     or getattr(driver, "_helios_participant_generation", None)
                     == generation
                 )
-                and driver.is_accepting_input
+                and _driver_is_active(driver)
             ):
                 return driver
         return None
@@ -175,8 +186,15 @@ class DriverManager:
 
     def live_ids(self) -> set[str]:
         ids = set(self.live)
-        if self.starting is not None and getattr(self.starting, "session_id", ""):
-            ids.add(self.starting.session_id)
+        if self.starting is not None:
+            sid = _driver_expected_session_id(self.starting)
+            if sid:
+                ids.add(sid)
+        for driver in self.handlers:
+            if _driver_is_active(driver):
+                sid = _driver_expected_session_id(driver)
+                if sid:
+                    ids.add(sid)
         return ids
 
     def drivers_for_shutdown(self) -> set[Driver]:
@@ -267,3 +285,25 @@ def _end_input_quietly(driver: Driver) -> None:
         driver.end_input()
     except Exception:
         pass
+
+
+def _driver_is_active(driver: Driver) -> bool:
+    return bool(
+        getattr(driver, "is_accepting_input", False)
+        or getattr(driver, "is_initializing", False)
+    )
+
+
+def _driver_expected_session_id(driver: Driver) -> str:
+    return str(
+        getattr(driver, "session_id", "")
+        or (
+            (
+                getattr(driver, "_helios_expected_resume_id", "")
+                or getattr(driver, "_resume_session_id", "")
+            )
+            if getattr(driver, "is_initializing", False)
+            else ""
+        )
+        or ""
+    )

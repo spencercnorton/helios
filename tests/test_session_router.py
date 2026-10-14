@@ -179,3 +179,25 @@ def test_provider_switch_preserves_work_and_swaps_only_native_binding():
     )
     assert switch_work_participant(switched, "codex-1", "openai") is switched
     assert switch_work_participant(None, "codex-1") is None
+
+
+def test_route_selection_binds_initializing_live_driver():
+    session = _session("muse-sid-1")
+    initializing = SimpleNamespace(is_accepting_input=False, is_initializing=True)
+
+    route = route_session_selection(
+        session,
+        initializing,
+        live_matches_provider=True,
+        work_id="wrk-1",
+        resume_provider="muse",
+    )
+
+    assert route.target == ChatTarget(
+        project=session.project,
+        resume_id="muse-sid-1",
+        work_id="wrk-1",
+        resume_provider="muse",
+    )
+    assert route.live_driver is initializing
+    assert route.follow_transcript is False

@@ -1214,6 +1214,24 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         self._chat_toolbar.set_choices(selectable)
         self._catalog_entries_by_id = {entry.id: entry for entry in selectable}
         self._normalize_openai_model_memory()
+        pending_provider = str(
+            getattr(self, "_pending_session_provider_adoption", "") or ""
+        )
+        if pending_provider and getattr(self, "_driver", None) is None:
+            target = getattr(self, "_next_chat", None)
+            target_provider = str(
+                getattr(target, "resume_provider", "") or ""
+            )
+            if (
+                target is not None
+                and getattr(target, "resume_id", "")
+                and not getattr(getattr(target, "project", None), "read_only", False)
+                and (not target_provider or target_provider == pending_provider)
+            ):
+                self._pending_session_provider_adoption = ""
+                adopt = getattr(self, "_adopt_session_provider", None)
+                if callable(adopt):
+                    adopt(pending_provider)
         self._sync_effort_sensitivity()
         self._sync_execution_control()
         available = (
@@ -2708,6 +2726,8 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
     def _apply_model_choice(self, alias: str, *, quiet: bool = False) -> None:
         """The single path for every model change (picker, provider toggle,
         settings): persist, remember per provider, reflect everywhere."""
+        if not quiet:
+            self._pending_session_provider_adoption = ""
         old_provider = model_catalog.provider_for(self._model)
         self._model = alias
         self._ui_state.set("model", alias)  # sticky across restarts
@@ -2996,7 +3016,10 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             generation=(participant.generation if participant is not None else None),
         )
         if live is not None and (
-            not live.is_accepting_input
+            not (
+                live.is_accepting_input
+                or getattr(live, "is_initializing", False)
+            )
             or not self._driver_matches_selected_provider(live)
         ):
             live = None
@@ -3004,14 +3027,23 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             candidate = self._driver_manager.driver_for_session(resume_id)
             if (
                 candidate is not None
-                and candidate.is_accepting_input
+                and (
+                    candidate.is_accepting_input
+                    or getattr(candidate, "is_initializing", False)
+                )
                 and self._driver_matches_selected_provider(candidate)
             ):
                 live = candidate
                 if participant is not None:
                     tag_driver(live, participant)
-        if live is not None and live.is_accepting_input:
-            native_id = resume_id or str(getattr(live, "session_id", "") or "")
+        if live is not None and (
+            live.is_accepting_input or getattr(live, "is_initializing", False)
+        ):
+            native_id = (
+                resume_id
+                or str(getattr(live, "session_id", "") or "")
+                or str(getattr(live, "_helios_expected_resume_id", "") or "")
+            )
             if native_id:
                 session = self._session_for_native_binding(target.project, native_id)
                 self._on_session_selected(self._sessions, session)
@@ -3057,7 +3089,16 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         staged_effort = self._staged_effort_key
         staged_workflow = self._staged_workflow_mode
         current = self._driver
-        if current is not None and current.session_id == session_id:
+        current_session_id = str(
+            getattr(current, "session_id", "")
+            or (
+                getattr(current, "_helios_expected_resume_id", "")
+                if getattr(current, "is_initializing", False)
+                else ""
+            )
+            or ""
+        )
+        if current is not None and current_session_id == session_id:
             # Force the full selection path even if an earlier degraded route
             # raw-bound this driver while a sibling transcript stayed visible.
             self._bind_visible_driver(None)
@@ -3169,15 +3210,20 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         ):
             return
         if provider == self._selected_provider():
+            self._pending_session_provider_adoption = ""
             return
         if provider == model_catalog.PROVIDER_OPENAI and not self._openai_entries:
             # Historical GPT transcripts remain viewable, but without an
             # authoritative catalog we cannot safely resume/spawn GPT. Keep the
             # fail-closed Claude selection; a send stages that Work participant.
+            self._pending_session_provider_adoption = provider
             return
         alias = self._model_for_provider(provider)
         if alias:
+            self._pending_session_provider_adoption = ""
             self._apply_model_choice(alias, quiet=True)
+        else:
+            self._pending_session_provider_adoption = provider
 
     def _selected_provider(self) -> str:
         return model_catalog.provider_for(self._model)
@@ -3620,9 +3666,18 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         # Defensive guard: if a sidebar refresh "re-selects" the row that
         # belongs to the currently-visible driver, this is not a user-initiated
         # switch — it's a status-dot refresh disguised as a click. Bail.
+        driver_session_id = str(
+            getattr(self._driver, "session_id", "")
+            or (
+                getattr(self._driver, "_helios_expected_resume_id", "")
+                if getattr(self._driver, "is_initializing", False)
+                else ""
+            )
+            or ""
+        )
         if (
             self._driver is not None
-            and self._driver.session_id == session.session_id
+            and driver_session_id == session.session_id
             and provider_resolution.known
             and self._driver_provider(self._driver)
             == provider_resolution.provider
@@ -3682,7 +3737,11 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
                         session_provider,
                         session.session_id,
                         cwd=session.project.cwd,
-                        model=self._model,
+                        model=(
+                            self._model
+                            if self._selected_provider() == session_provider
+                            else ""
+                        ),
                     )
                     work_id = work.work_id
                 except Exception as exc:
@@ -4287,6 +4346,30 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         if target is None:
             self._toast("Pick a project first.")
             return False
+        viewed_resolution = MainWindow._target_resume_resolution(self, target)
+        viewed_provider = (
+            viewed_resolution.provider if viewed_resolution.known else ""
+        )
+        pending_adoption = str(
+            getattr(self, "_pending_session_provider_adoption", "") or ""
+        )
+        if (
+            viewed_provider
+            and viewed_provider != self._selected_provider()
+            and pending_adoption == viewed_provider
+        ):
+            adopt = getattr(self, "_adopt_session_provider", None)
+            if callable(adopt):
+                adopt(viewed_provider)
+            if (
+                viewed_provider != self._selected_provider()
+                and getattr(self, "_catalog_refresh_running", False)
+            ):
+                self._toast(
+                    "Helios is still loading provider models for this session — "
+                    "try sending again in a moment."
+                )
+                return False
         coordinator = getattr(self, "_work_coordinator", None)
         if target.work_id:
             budget_block = MainWindow._work_execution_block_reason(
@@ -4295,10 +4378,6 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             if budget_block:
                 self._toast(budget_block)
                 return False
-        viewed_resolution = MainWindow._target_resume_resolution(self, target)
-        viewed_provider = (
-            viewed_resolution.provider if viewed_resolution.known else ""
-        )
         lock_reason = MainWindow._execution_target_lock_reason(self)
         if lock_reason:
             if lock_reason == "read-only":
@@ -4445,15 +4524,24 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             ),
         )
         if work_live is not None:
-            if work_live.session_id and self._sessions.reveal_session(
-                work_live.session_id
+            work_live_session_id = str(
+                getattr(work_live, "session_id", "")
+                or (
+                    getattr(work_live, "_helios_expected_resume_id", "")
+                    if getattr(work_live, "is_initializing", False)
+                    else ""
+                )
+                or ""
+            )
+            if work_live_session_id and self._sessions.reveal_session(
+                work_live_session_id
             ):
                 return True
-            if work_live.session_id:
+            if work_live_session_id:
                 MainWindow._show_native_execution_binding(
                     self,
                     target.project,
-                    work_live.session_id,
+                    work_live_session_id,
                 )
             else:
                 MainWindow._show_fresh_execution_binding(self, target)
@@ -4466,7 +4554,10 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             live = self._driver_manager.driver_for_session(target.resume_id)
             if (
                 live is not None
-                and live.is_accepting_input
+                and (
+                    live.is_accepting_input
+                    or getattr(live, "is_initializing", False)
+                )
                 and self._driver_matches_selected_provider(live)
             ):
                 if current_participant is not None:
@@ -5139,8 +5230,17 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             isinstance(drv, (GeminiCliDriver, MuseServeDriver))
             and drv.is_initializing
             and target is not None
-            and target.work_id
-            and target.work_id == getattr(drv, "_helios_work_id", "")
+            and (
+                (
+                    target.work_id
+                    and target.work_id == getattr(drv, "_helios_work_id", "")
+                )
+                or (
+                    target.resume_id
+                    and target.resume_id
+                    == getattr(drv, "_helios_expected_resume_id", "")
+                )
+            )
             and canonical_cwd(target.project.cwd) == canonical_cwd(drv.cwd)
             and self._driver_matches_selected_provider(drv)
         ):
@@ -5235,6 +5335,16 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             and hasattr(drv, "queued_messages")
             and drv.queued_messages()
         )
+        if (
+            isinstance(drv, (GeminiCliDriver, MuseServeDriver))
+            and drv.is_initializing
+            and (drv.is_busy or checkpoint_pending or queued_pending)
+        ):
+            GLib.idle_add(self._restore_blocked_execution_send, text)
+            self._toast(
+                "Google is preparing this chat — your next message was kept as a draft."
+            )
+            return
         if drv is not None and (drv.is_busy or checkpoint_pending or queued_pending):
             lock_reason = MainWindow._execution_target_lock_reason(self)
             target_matches = (

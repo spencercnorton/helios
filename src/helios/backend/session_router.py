@@ -47,7 +47,10 @@ def route_session_selection(
 
     if (
         live_driver is not None
-        and getattr(live_driver, "is_accepting_input", False)
+        and (
+            getattr(live_driver, "is_accepting_input", False)
+            or getattr(live_driver, "is_initializing", False)
+        )
         and live_matches_provider
     ):
         # Bind the live driver AND stage its session id for resume. While the

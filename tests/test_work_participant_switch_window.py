@@ -403,3 +403,80 @@ def test_degraded_gpt_view_fails_closed_without_a_bounded_work(
         "send your message.",
     ]
     assert window._next_chat.resume_id == gpt_id
+
+
+def test_sidebar_refresh_keeps_initializing_resume_driver_bound(tmp_path):
+    session_id = "muse-resume-native"
+    project = Project(dirname="-repo", cwd="/repo", path=tmp_path)
+    path = tmp_path / f"{session_id}.jsonl"
+    path.write_text("", encoding="utf-8")
+    session = Session(project, session_id, path, 0.0, 0)
+    session_providers.set_provider(session_id, "muse")
+
+    initializing = _Driver("muse", "", "work-1")
+    initializing.is_accepting_input = False
+    initializing.is_initializing = True
+    initializing.is_busy = True
+    initializing._cwd = "/repo"
+    initializing._helios_expected_resume_id = session_id
+
+    manager = DriverManager(max_live=4, idle_seconds=60)
+    manager.add_starting(initializing, [1])
+
+    binds: list[object] = []
+    window = types.SimpleNamespace(
+        _driver=initializing,
+        _driver_manager=manager,
+        _conversation_perms=types.SimpleNamespace(
+            providers_for_session=lambda _session_id: frozenset(),
+        ),
+        _shared=types.SimpleNamespace(set_handoff_target=lambda _session: None),
+        _staged_permission_mode="",
+        _staged_effort_key="",
+        _staged_workflow_mode="",
+        _model="muse-spark",
+        _driver_provider=lambda driver: driver.provider,
+        _driver_matches_selected_provider=lambda driver: driver.provider == "muse",
+        _bind_visible_driver=lambda driver: binds.append(driver),
+        _adopt_session_provider=lambda _provider: None,
+        _sync_assistant_labels=lambda: None,
+        _stop_following=lambda: None,
+        _start_following=lambda _session: None,
+        _sync_execution_control=lambda: None,
+        _refresh_execution_plan=lambda: None,
+        _context=types.SimpleNamespace(set_project=lambda _project: None),
+        _chat_toolbar=types.SimpleNamespace(
+            set_context_usage=lambda *_args: None,
+            set_context_model=lambda _model: None,
+            set_visible=lambda _visible: None,
+        ),
+        _load_context_fill_async=lambda _session: None,
+        _transcript=types.SimpleNamespace(set_session=lambda _session: None),
+        _refresh_goal_strip=lambda: None,
+        _plan=types.SimpleNamespace(set_session=lambda _session: None),
+        _drafts=DraftBook(),
+        _draft_key="",
+        _composer=types.SimpleNamespace(
+            set_visible=lambda _visible: None,
+            set_read_only=lambda *_args: None,
+            current_text=lambda: "",
+            set_text=lambda _text: None,
+        ),
+        _main_stack=types.SimpleNamespace(
+            set_visible_child_name=lambda _name: None,
+        ),
+        _selected_provider=lambda: "muse",
+        _work_coordinator=None,
+        _pump_questions=lambda: None,
+    )
+
+    # 1. With _driver already bound to the initializing resume driver, a sidebar
+    # re-selection hits the defensive guard and does not unbind _driver.
+    MainWindow._on_session_selected(window, None, session)
+    assert binds == []
+
+    # 2. Even if _driver was unbound first, selecting the session locates the
+    # initializing driver via DriverManager.driver_for_session and rebinds it.
+    window._driver = None
+    MainWindow._on_session_selected(window, None, session)
+    assert binds == [initializing]

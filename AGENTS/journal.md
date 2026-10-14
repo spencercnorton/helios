@@ -1,6 +1,19 @@
 # Helios — Session Journal
 
 
+## 2026-10-14 — Fix startup provider adoption race and in-flight resume driver tracking
+
+- **Branch:** `fix/session-resume-provider-and-startup-race`
+- **Symptom:** Resuming a Muse or Google session right after startup could switch the Work lead to the persisted model from `ui-state.json`, clear the transcript pane to a fresh chat, and spawn a contextless session on another provider; additionally, selecting/refreshing the sidebar while a large `session/resume` was still initializing unbound the starting driver and allowed duplicate resume processes.
+- **Root cause:**
+  1. `_adopt_session_provider` ran during startup session selection before the background model catalog worker populated `_catalog_entries_by_id` / `_openai_entries`, so `_model_for_provider` returned `""` and `_apply_model_catalog` never re-adopted the staged session's provider on completion. `_on_session_selected` also passed the un-adopted `self._model` into `resolve_native_work`.
+  2. `DriverManager.driver_for_session`, `DriverManager.driver_for_work_participant`, `route_session_selection`, `_on_session_selected`, and `_ensure_driver` only matched drivers with `is_accepting_input=True` and populated `session_id`, missing `MuseServeDriver` and `GeminiCliDriver` instances while `is_initializing=True` during `session/resume`.
+- **What changed:**
+  - Record `_pending_session_provider_adoption` when `_adopt_session_provider` runs before catalog readiness, re-adopt on `_apply_model_catalog` completion (unless the user explicitly changed the model), guard `_ensure_driver` against cross-provider hijacking while the startup catalog is still loading, and only pass `self._model` to `resolve_native_work` when its provider matches `session_provider`.
+  - Recognize `is_initializing` drivers and their `_helios_expected_resume_id` across `DriverManager`, `route_session_selection`, `_on_session_selected`, `_ensure_driver`, and `_on_composer_send`.
+- **Tests:** Added unit coverage in `tests/test_model_catalog_refresh.py`, `tests/test_driver_manager.py`, `tests/test_session_router.py`, and `tests/test_work_participant_switch_window.py`.
+
+
 ## 2026-10-13 — muse — Muse parity audit, complementary tests, 0.103.3
 
 - **What changed:** a Muse session running under Helios audited its own
