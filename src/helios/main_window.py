@@ -83,7 +83,11 @@ from helios.backend.session_router import (
     stage_work,
     switch_work_participant,
 )
-from helios.backend.process.streaming import format_turn_footer, is_background_wakeup
+from helios.backend.process.streaming import (
+    format_turn_footer,
+    is_background_wakeup,
+    terminal_tokens,
+)
 from helios.backend.project_perms import (
     MODE_LABELS,
     PERMISSION_MODES,
@@ -3798,6 +3802,14 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         self._chat_toolbar.set_context_usage(0, 0)
         # Size the meter to the selected model's window even before a turn runs.
         self._chat_toolbar.set_context_model(self._model)
+        # A live driver already reported its fill; the transcript read below
+        # deliberately defers to it, so without this the meter sat at 0.
+        last_usage = getattr(self._driver, "_helios_last_usage", None)
+        if last_usage:
+            self._chat_toolbar.set_context_usage(*last_usage)
+        self._chat_toolbar.set_session_tokens(
+            *getattr(self._driver, "_helios_session_tokens", (0, 0))
+        )
         # Show this session's ACTUAL current context fill immediately (read from
         # its transcript tail), rather than 0% until the next turn runs.
         self._load_context_fill_async(session)
@@ -3904,6 +3916,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         if changes is not None:
             changes.set_project(project)
         self._chat_toolbar.set_context_usage(0, 0)
+        self._chat_toolbar.set_session_tokens(0, 0)
         self._chat_toolbar.set_context_model(self._model)
         self._transcript.show_live_session(cwd=project.cwd, model=self._model or "default")
         self._refresh_goal_strip()
@@ -6755,6 +6768,10 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         changes = getattr(self, "_changes", None)
         if changes is not None and changes.cwd == str(getattr(drv, "_cwd", "") or ""):
             changes.refresh()
+        tokens = terminal_tokens(result)
+        if tokens is not None:
+            spent = getattr(drv, "_helios_session_tokens", (0, 0))
+            drv._helios_session_tokens = (spent[0] + tokens[0], spent[1] + tokens[1])
         if not self._drv_is_current(drv):
             # A BACKGROUND session just finished a turn — let the user know,
             # since its dot is off-screen / not what they're watching. Unless
@@ -6781,6 +6798,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         set_footer = getattr(self._transcript, "set_last_turn_footer", None)
         if callable(set_footer) and not is_background_wakeup(result):
             set_footer(format_turn_footer(result))
+        self._chat_toolbar.set_session_tokens(*getattr(drv, "_helios_session_tokens", (0, 0)))
         self._activity.clear()
         # Re-refresh sidebar — by now the .jsonl is definitely on disk and
         # has timestamps/title content the status probe can use. Belt-and-
@@ -6872,6 +6890,9 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             )
 
     def _on_usage_updated(self, drv, used: int, total: int) -> None:
+        # Remember it even for a background session, so switching back to a
+        # live one shows its fill instead of 0 until its next request.
+        drv._helios_last_usage = (used, total)
         if self._destroyed or not self._drv_is_current(drv):
             return
         self._chat_toolbar.set_context_usage(used, total)
@@ -6990,6 +7011,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         used = int(payload.get("totalTokens") or 0)
         if total <= 0:
             return
+        drv._helios_last_usage = (used, total)
         self._chat_toolbar.set_context_usage(used, total)
         self._chat_toolbar.set_measured_breakdown(payload)
 
@@ -7215,7 +7237,9 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
     _RATE_WARN_BANDS: tuple[int, ...] = (95, 80)
 
     def _on_rate_limit_updated(self, drv, info: dict) -> None:
-        if self._destroyed or not self._drv_is_current(drv):
+        # Quotas are account-wide, so a background session's report is as
+        # current for the visible one; the popover files rows by provider.
+        if self._destroyed:
             return
         self._chat_toolbar.update_rate_limit(info)
         MainWindow._warn_on_rate_limit(self, info)

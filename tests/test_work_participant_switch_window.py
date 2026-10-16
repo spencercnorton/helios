@@ -318,6 +318,7 @@ def test_read_only_pool_copy_never_reuses_matching_local_live_driver(tmp_path):
         _context=types.SimpleNamespace(set_project=lambda _project: None),
         _chat_toolbar=types.SimpleNamespace(
             set_context_usage=lambda *_args: None,
+            set_session_tokens=lambda *_args: None,
             set_context_model=lambda _model: None,
             set_visible=lambda _visible: None,
         ),
@@ -447,6 +448,7 @@ def test_sidebar_refresh_keeps_initializing_resume_driver_bound(tmp_path):
         _context=types.SimpleNamespace(set_project=lambda _project: None),
         _chat_toolbar=types.SimpleNamespace(
             set_context_usage=lambda *_args: None,
+            set_session_tokens=lambda *_args: None,
             set_context_model=lambda _model: None,
             set_visible=lambda _visible: None,
         ),

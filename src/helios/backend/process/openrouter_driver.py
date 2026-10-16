@@ -1053,6 +1053,13 @@ class OpenRouterDriver(UserMessageQueueMixin, GObject.Object):
                 # would multiply the reported fill by the round count. Cost is
                 # cumulative and is accumulated separately.
                 last_usage = usage
+                if usage.reported and usage.input_tokens > 0:
+                    # Move the ring during long tool loops, not only at the end.
+                    GLib.idle_add(
+                        self.emit, "usage-updated",
+                        usage.input_tokens + usage.output_tokens,
+                        self._context_window_total(),
+                    )
                 request_count += 1
                 tool_call_count += len(round_tool_calls)
                 budget_tripped = False
@@ -1434,12 +1441,14 @@ class OpenRouterDriver(UserMessageQueueMixin, GObject.Object):
             self.emit("turn-appended", turn)
             self.emit("result", result)
             # prompt_tokens already includes the cached prefix; adding the
-            # reply gives what the window actually holds now.
-            self.emit(
-                "usage-updated",
-                last_usage.input_tokens + last_usage.output_tokens,
-                context_window,
-            )
+            # reply gives what the window actually holds now. A turn that
+            # failed before any reported round must not zero a real fill.
+            if last_usage.input_tokens > 0:
+                self.emit(
+                    "usage-updated",
+                    last_usage.input_tokens + last_usage.output_tokens,
+                    context_window,
+                )
             if error_message:
                 self.emit("error", error_message)
             # Keep admission visibly busy until every terminal callback above
@@ -2159,8 +2168,11 @@ class OpenRouterDriver(UserMessageQueueMixin, GObject.Object):
         """
         GLib.idle_add(self.emit, "rate-limit-updated", {
             "rateLimitType": "openrouter",
-            "provider": self._route.provider_name if self._route else "OpenRouter",
-            "status": "reached",
+            # The toolbar filters rows by catalog provider id; the upstream
+            # name (e.g. "DeepInfra") goes in the visible detail instead.
+            "provider": model_catalog.PROVIDER_OPENROUTER,
+            "status": "blocked",
+            "detail": self._route.provider_name if self._route else "",
             "message": error.message or "rate limited",
         })
 

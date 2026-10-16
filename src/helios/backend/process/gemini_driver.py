@@ -419,6 +419,7 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
                 return False
             self._last_step_index = index
             self._last_activity = time.monotonic()
+            self._emit_step_context(step)
             if kind == "user_input":
                 # Antigravity identifies accepted input by its conversation
                 # and durable step index, rather than a separate turn UUID.
@@ -515,6 +516,22 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
             if status == "SUCCESS" and not self._stopped:
                 self._flush_user_queue()
         return False
+
+    def _emit_step_context(self, step: dict) -> None:
+        """A finished step's ``usage`` is that one model call (measured on agy,
+        2026-10-16: a two-call turn reported 13,044 then 2,275 + 10,998 cached,
+        and the result summed them). Its prompt plus output is therefore the
+        window's current fill. agy publishes no window size, so the
+        denominator stays 0 — unknown, never guessed.
+        """
+        usage = step.get("usage")
+        if step.get("state") != "DONE" or not isinstance(usage, dict):
+            return
+        counts = [usage.get(k) for k in ("input_tokens", "cache_read_tokens", "output_tokens")]
+        if not all(isinstance(v, int) and not isinstance(v, bool) and v >= 0 for v in counts):
+            return
+        if sum(counts):
+            self.emit("usage-updated", sum(counts), model_catalog.context_window_for(self._model))
 
     def _finish_predispatch_attempt(self) -> bool:
         if self._startup_pending_text is None:

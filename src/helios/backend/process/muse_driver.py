@@ -46,6 +46,7 @@ from helios.backend.process.message_queue import (
 )
 from helios.backend.process.streaming import Block, StreamingAssistant
 from helios.backend.project_perms import effective_execution_mode, is_home_cwd
+from helios.backend.rate_limits import muse_rate_limit_rows
 from helios.backend.sensitive_text import scrub_sensitive
 from helios.backend.transcript import ToolResult
 from helios.log import get_logger
@@ -370,6 +371,9 @@ class MuseServeDriver(UserMessageQueueMixin, GObject.Object):
             "capabilities-updated",
             {"tools": list(self.init_tools), "mcp_servers": list(self.init_mcp_servers)},
         )
+        # Subscription windows are host-wide and only pushed on change, so
+        # read the last observation once rather than waiting for the next one.
+        self._send("usage/read")
         if pending:
             self.send_user_text(pending, _reuse_execution_attempt=True)
 
@@ -509,6 +513,26 @@ class MuseServeDriver(UserMessageQueueMixin, GObject.Object):
         if outcome.accepted or outcome.uncertain:
             self._uncertain_queue_delivery = delivery
 
+    def _emit_context_usage(self, params: Any) -> None:
+        """``session/contextUsage`` is MSP's counted-once window occupancy.
+
+        ``windowTokens`` is absent when the host's basis has no limit; the
+        catalog's discovered size is then the best honest denominator.
+        """
+        if not isinstance(params, dict):
+            return
+        used = params.get("usedTokens")
+        if not isinstance(used, int) or isinstance(used, bool) or used < 0:
+            return
+        window = params.get("windowTokens")
+        if not isinstance(window, int) or isinstance(window, bool) or window <= 0:
+            window = model_catalog.context_window_for(self._model)
+        self.emit("usage-updated", used, window)
+
+    def _emit_subscription_usage(self, usage: Any) -> None:
+        for row in muse_rate_limit_rows(usage):
+            self.emit("rate-limit-updated", row)
+
     # ── inbound dispatch ────────────────────────────────────────────────────
 
     def _dispatch_message(self, msg: dict[str, Any]) -> bool:
@@ -532,6 +556,8 @@ class MuseServeDriver(UserMessageQueueMixin, GObject.Object):
                     str((msg.get("error") or {}).get("message") or "request failed"))
                 if method in ("initialize", "session/start", "session/resume"):
                     self._protocol_failure(f"Muse refused to start: {detail[:400]}")
+                elif method == "usage/read":
+                    pass  # optional telemetry; an older host simply has none
                 elif method == "turn/start" and self.execution_attempt_id:
                     self.emit("error", f"Muse refused the turn: {detail[:400]}")
                     self._finish_turn("failed", error_text=detail[:400])
@@ -545,6 +571,8 @@ class MuseServeDriver(UserMessageQueueMixin, GObject.Object):
             elif method in ("session/start", "session/resume"):
                 session = result.get("session") if isinstance(result, dict) else None
                 self._on_session_bound(session)
+            elif method == "usage/read" and isinstance(result, dict):
+                self._emit_subscription_usage(result.get("usage"))
             elif method == "turn/start" and isinstance(result, dict):
                 turn_id = result.get("turnId")
                 if isinstance(turn_id, str) and turn_id:
@@ -571,20 +599,10 @@ class MuseServeDriver(UserMessageQueueMixin, GObject.Object):
             for key, value in usage.items():
                 if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
                     self._turn_usage[key] = self._turn_usage.get(key, 0) + value
-            cumulative = params.get("cumulative") if isinstance(params.get("cumulative"), dict) else {}
-            prompt = cumulative.get("promptTokens")
-            output = cumulative.get("outputTokens")
-            if isinstance(prompt, int) and isinstance(output, int):
-                self.emit("usage-updated", prompt, output)
         elif method == "usage/changed":
-            self.emit("rate-limit-updated", params)
+            self._emit_subscription_usage(params)
         elif method == "session/contextUsage":
-            self.emit("activity-updated", {
-                "category": "tool-progress",
-                "windowTokens": params.get("windowTokens"),
-                "usedTokens": params.get("usedTokens"),
-                "pressure": params.get("pressure"),
-            })
+            self._emit_context_usage(params)
         elif method == "session/todoListChanged":
             todos = params.get("todos") or params.get("items") or params.get("todoList")
             if isinstance(todos, list):

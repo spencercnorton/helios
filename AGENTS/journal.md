@@ -1,5 +1,39 @@
 # Helios — Session Journal
 
+## 2026-10-16 — claude — Usage stats visible for every provider (v0.105.0)
+
+- **Branch:** `claude/usage-stats`
+- **Symptom:** "none of our models show context or usage stats". The ring and
+  hover popover existed, but: Muse emitted cumulative `(prompt, output)` as
+  `(used, window)` and dropped MSP `session/contextUsage` into an activity
+  event; Google never emitted `usage-updated` (window 0 → permanent "·");
+  OpenRouter 429 rows carried the upstream name as `provider` and were always
+  filtered out, and a failed turn zeroed the ring; switching to a live session
+  reset the meter to 0 because the transcript re-read defers to live drivers;
+  nothing was readable without hovering.
+- **What changed:** Muse uses `session/contextUsage` and maps `usage/changed` /
+  `usage/read` (`SubscriptionUsage`) to limit rows (`rate_limits.muse_rate_limit_rows`;
+  `humanize_window_mins` moved there from `codex_app_contract`). Google emits
+  the fill from each DONE `step_update.usage` (measured: per model call, input
+  excludes `cache_read_tokens`; agy publishes no window, so it stays 0 and the
+  caption reads "N used"). OpenRouter emits per round and skips zero fills.
+  The window caches `drv._helios_last_usage` / `_helios_session_tokens` and
+  restores them on switch; limit rows are filed per provider in the popover and
+  no longer gated on the visible driver (quotas are account-wide). New
+  `usage_caption` label beside the ring; popover gains "This session" totals and
+  `set_max_width_chars(46)` on wrapped notes (it outgrew the window and clipped
+  the legend numbers). Transcript assistant names now come from one table that
+  includes Muse.
+- **Validation:** worktree Helios run on Xvfb `:99` under `dbus-run-session`
+  with a private `HELIOS_STATE_DIR`: Gemini `13.8k used`, Muse
+  `49.8k / 1.008M · 5-hour 6%`, Claude `37.2k / 1M` with legend values and
+  "This session". GPT could not be exercised there (Codex credentials sit in the
+  GNOME keyring, unreachable from the private bus). Full suite green except the
+  two `test_model_catalog_refresh` failures that also fail on `main`.
+- **Not done:** Codex's per-message footer still reports the last request, not
+  the turn total; Muse/Gemini transcripts still store no usage, so reopening an
+  idle session of theirs shows 0 until its next turn.
+
 
 ## 2026-10-14 — Fix startup provider adoption race and in-flight resume driver tracking
 

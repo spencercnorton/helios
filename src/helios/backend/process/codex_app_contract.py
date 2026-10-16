@@ -17,7 +17,7 @@ from helios.backend.project_perms import (
     effective_execution_mode,
 )
 from helios.backend.sensitive_text import scrub_sensitive
-from helios.backend.rate_limits import measured_percent
+from helios.backend.rate_limits import humanize_window_mins, measured_percent
 from helios.backend.workflow_modes import (
     PLAN_WORKFLOW_MODE,
     canonical_workflow_mode,
@@ -440,32 +440,6 @@ def _permission_path(value: object) -> str:
                 return f"{kind}: {explicit_path}"
             return f"{kind}{f'/{subpath}' if subpath else ''}"
     return _display_text(value, 500)
-
-
-def humanize_window_mins(mins: object) -> str:
-    """"300" -> "5-hour usage". Empty string when the CLI sent no duration.
-
-    `RateLimitWindow.windowDurationMins` is the only self-describing field the
-    App Server gives a window; `limitId` is an opaque backend id (schema says
-    nullable string, not an enum), so keying a label table off it was always
-    going to render a raw key the first time OpenAI changed one.
-    """
-
-    try:
-        total = int(mins)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return ""
-    if total <= 0:
-        return ""
-    for size, one, many in (
-        (10080, "Weekly usage", "{n}-week usage"),
-        (1440, "Daily usage", "{n}-day usage"),
-        (60, "Hourly usage", "{n}-hour usage"),
-    ):
-        if total % size == 0:
-            count = total // size
-            return one if count == 1 else many.format(n=count)
-    return f"{total}-minute usage"
 
 
 def rate_limit_rows(snapshot: dict[str, Any]) -> list[dict[str, Any]]:

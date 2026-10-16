@@ -193,3 +193,31 @@ def test_session_bound_populates_tools_and_emits_capabilities(tmp_path, monkeypa
     assert driver.init_tools
     assert driver.init_mcp_servers == [{"name": "code-intel", "status": "configured"}]
     assert caps and caps[0]["mcp_servers"] == [{"name": "code-intel", "status": "configured"}]
+
+
+def test_context_and_subscription_usage_reach_the_meter(tmp_path):
+    """Occupancy comes from session/contextUsage; cumulative token counts and
+    the 5-hour/weekly percentages are not mistaken for (used, window)."""
+    driver = _driver(tmp_path)
+    usage, limits = [], []
+    driver.connect("usage-updated", lambda _d, used, window: usage.append((used, window)))
+    driver.connect("rate-limit-updated", lambda _d, row: limits.append(row))
+
+    driver._dispatch_message({"method": "session/tokenUsage", "params": {
+        "usage": {"inputTokens": 900, "outputTokens": 40},
+        "cumulative": {"promptTokens": 5000, "outputTokens": 400, "totalTokens": 5400}}})
+    assert usage == []
+    driver._dispatch_message({"method": "session/contextUsage", "params": {
+        "sessionId": "session-1", "usedTokens": 42_000, "windowTokens": 256_000,
+        "pressure": "normal", "sourceRange": {}, "viewCursor": "c1"}})
+    assert usage == [(42_000, 256_000)]
+
+    driver._dispatch_message({"method": "usage/changed", "params": {
+        "observedAtMs": 1, "tier": "pro",
+        "window": {"usedPercent": 55, "resetsAtMs": 1_900_000_000_000, "windowDurationMins": 300},
+        "weekly": {"usedPercent": 130, "resetsAtMs": 1_900_000_500_000}}})
+    assert [(r["rateLimitType"], r["label"], r["usedPercent"], r["status"], r["resetsAt"]) for r in limits] == [
+        ("muse_window", "5-hour usage", 55.0, "allowed", 1_900_000_000),
+        ("muse_weekly", "Weekly usage", 100.0, "exceeded", 1_900_000_500),
+    ]
+    assert {r["provider"] for r in limits} == {"muse"}

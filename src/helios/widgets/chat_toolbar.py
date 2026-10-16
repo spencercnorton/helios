@@ -316,6 +316,15 @@ class ChatToolbar(Gtk.Box):
         self.append(spacer)
 
         # --- Right: context-window meter (with hover details popover) ---
+        # The numbers people actually glance at, without hovering.
+        self._usage_caption = Gtk.Label(xalign=1)
+        self._usage_caption.add_css_class("caption")
+        self._usage_caption.add_css_class("dim-label")
+        self._usage_caption.add_css_class("numeric")
+        self._usage_caption.set_visible(False)
+        self.append(self._usage_caption)
+        self._caption_used = 0
+        self._caption_window = 0
         self._context_meter = _ContextMeter()
         self.append(self._context_meter)
 
@@ -690,6 +699,23 @@ class ChatToolbar(Gtk.Box):
             return
         self._context_meter.set_usage(used, total)
         self._context_popover.set_usage(used, total)
+        self._caption_used, self._caption_window = used, total
+        self._refresh_usage_caption()
+
+    def set_session_tokens(self, tokens_in: int, tokens_out: int) -> None:
+        """Totals for this session since Helios opened it (popover only)."""
+        if self._destroyed:
+            return
+        self._context_popover.set_session_tokens(tokens_in, tokens_out)
+
+    def _refresh_usage_caption(self) -> None:
+        text = usage_caption(
+            self._caption_used,
+            self._caption_window,
+            self._context_popover._rate_limits,
+        )
+        self._usage_caption.set_label(text)
+        self._usage_caption.set_visible(bool(text))
 
     def set_context_breakdown(self, breakdown) -> None:
         """Per-category split of the usage already shown (see
@@ -743,11 +769,15 @@ class ChatToolbar(Gtk.Box):
         window = context_window_for_model(model)
         self._context_meter.set_window(window)
         self._context_popover.set_window(window)
+        if window > 0:
+            self._caption_window = window
+        self._refresh_usage_caption()
 
     def update_rate_limit(self, info: dict) -> None:
         if self._destroyed:
             return
         self._context_popover.update_rate_limit(info)
+        self._refresh_usage_caption()
 
     def set_busy(self, busy: bool) -> None:
         """Track turn state without locking anything.
@@ -2029,6 +2059,37 @@ def _format_tokens(tokens: int) -> str:
     return str(tokens)
 
 
+def usage_caption(used: int, window: int, limits: dict[str, dict]) -> str:
+    """The always-visible line beside the meter: ``84.2k / 200k · 5-hour 55%``.
+
+    The tightest quota is the one worth a glance; the popover keeps the rest.
+    A window the provider never published reads as "used", not as a guess.
+    """
+    parts = []
+    if used > 0:
+        parts.append(
+            f"{_format_tokens(used)} / {_format_window(window)}"
+            if window > 0
+            else f"{_format_tokens(used)} used"
+        )
+    worst = None
+    for rl_type, info in limits.items():
+        status = str(info.get("status") or "").lower()
+        percent = info.get("usedPercent")
+        blocked = status in {"blocked", "exceeded", "denied", "rejected"}
+        if not blocked and not isinstance(percent, (int, float)):
+            continue
+        rank = (blocked, percent if isinstance(percent, (int, float)) else 0)
+        if worst is None or rank > worst[0]:
+            worst = (rank, rl_type, info)
+    if worst is not None:
+        (blocked, percent), rl_type, info = worst
+        short = rate_limit_label(rl_type, info).split(" · ")[-1]
+        short = short.removesuffix(" usage").removesuffix(" limit")
+        parts.append(f"{short} limit reached" if blocked else f"{short} {int(percent)}%")
+    return " · ".join(parts)
+
+
 # ── Context-meter hover popover ───────────────────────────────────────────
 
 
@@ -2084,8 +2145,12 @@ _LIMITS_EMPTY: dict[str, str] = {
         "the session has not started or you are signed out."
     ),
     model_catalog.PROVIDER_GOOGLE: (
-        "Gemini reports usage on the first response of a session — "
-        "send a message to populate."
+        "Antigravity reports token counts but no account limits, so there is "
+        "nothing to show here."
+    ),
+    model_catalog.PROVIDER_MUSE: (
+        "Muse reports its usage windows once the session host has observed "
+        "them — send a message to populate."
     ),
     model_catalog.PROVIDER_OPENROUTER: (
         "OpenRouter reports account credit rather than a rolling window. Add "
@@ -2156,6 +2221,9 @@ class _ContextPopover(Gtk.Popover):
         self._legend_note.add_css_class("caption")
         self._legend_note.add_css_class("dim-label")
         self._legend_note.set_wrap(True)
+        # A wrapped label's natural width is its whole text on one line; without
+        # a cap the popover outgrew the window and clipped the legend's numbers.
+        self._legend_note.set_max_width_chars(46)
         self._legend_note.set_visible(False)
         box.append(self._legend_note)
         # What the categories are made of: memory files, skills, agents, the
@@ -2164,6 +2232,7 @@ class _ContextPopover(Gtk.Popover):
         self._details_label.add_css_class("caption")
         self._details_label.add_css_class("dim-label")
         self._details_label.set_wrap(True)
+        self._details_label.set_max_width_chars(46)
         self._details_label.set_selectable(True)
         self._details_label.set_visible(False)
         box.append(self._details_label)
@@ -2173,6 +2242,16 @@ class _ContextPopover(Gtk.Popover):
         self._model_label.add_css_class("caption")
         self._model_label.add_css_class("dim-label")
         box.append(self._model_label)
+
+        self._session_tokens_label = Gtk.Label(xalign=0)
+        self._session_tokens_label.add_css_class("caption")
+        self._session_tokens_label.add_css_class("dim-label")
+        self._session_tokens_label.set_tooltip_text(
+            "Tokens this session's turns consumed since Helios opened it — "
+            "every request, not just what is in the window now."
+        )
+        self._session_tokens_label.set_visible(False)
+        box.append(self._session_tokens_label)
 
         # ── Rate limits section ──
         sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
@@ -2198,6 +2277,7 @@ class _ContextPopover(Gtk.Popover):
         self._limits_empty.add_css_class("caption")
         self._limits_empty.add_css_class("dim-label")
         self._limits_empty.set_wrap(True)
+        self._limits_empty.set_max_width_chars(46)
         self._limits_box.append(self._limits_empty)
 
         # Link to the actual claude.ai dashboard for full breakdown.
@@ -2218,6 +2298,7 @@ class _ContextPopover(Gtk.Popover):
         self._compact_label.add_css_class("caption")
         self._compact_label.add_css_class("dim-label")
         self._compact_label.set_wrap(True)
+        self._compact_label.set_max_width_chars(46)
         self._compact_label.set_visible(False)
         self._compact_label.set_margin_top(4)
         box.append(self._compact_label)
@@ -2247,6 +2328,9 @@ class _ContextPopover(Gtk.Popover):
         # rate_limit_info dict for that type.
         self._rate_limits: dict[str, dict] = {}
         self._rate_provider = ""
+        #: Rows for providers not currently shown, so switching back to a
+        #: provider redisplays its last report instead of an empty state.
+        self._rate_store: dict[str, dict[str, dict]] = {}
 
         # Remember last usage + the selected model's window so set_window can
         # update the cap label before any turn, and set_usage can recompute.
@@ -2414,6 +2498,15 @@ class _ContextPopover(Gtk.Popover):
         self._legend_note.set_label(note)
         self._legend_note.set_visible(True)
 
+    def set_session_tokens(self, tokens_in: int, tokens_out: int) -> None:
+        shown = tokens_in > 0 or tokens_out > 0
+        self._session_tokens_label.set_visible(shown)
+        if shown:
+            self._session_tokens_label.set_label(
+                f"This session: {_format_tokens(tokens_in)} in · "
+                f"{_format_tokens(tokens_out)} out"
+            )
+
     def set_window(self, total: int) -> None:
         """Set the selected model's context window. Updates the cap label
         immediately; only rescales the bar/usage line once a turn has run."""
@@ -2430,8 +2523,10 @@ class _ContextPopover(Gtk.Popover):
     def set_model(self, model: str) -> None:
         if model:
             provider = model_catalog.provider_for(model)
-            if self._rate_provider and provider != self._rate_provider:
-                self._rate_limits.clear()
+            if provider != self._rate_provider:
+                if self._rate_provider:
+                    self._rate_store[self._rate_provider] = self._rate_limits
+                self._rate_limits = self._rate_store.pop(provider, {})
                 self._rebuild_limits_rows()
             self._rate_provider = provider
             self._model_label.set_label(f"Model: {model}")
@@ -2441,7 +2536,13 @@ class _ContextPopover(Gtk.Popover):
                     provider, _LIMITS_EMPTY[model_catalog.PROVIDER_ANTHROPIC]
                 )
             )
-            if provider == model_catalog.PROVIDER_OPENROUTER:
+            # Muse publishes no account page to link to.
+            self._usage_link.set_visible(provider != model_catalog.PROVIDER_MUSE)
+            if provider == model_catalog.PROVIDER_MUSE:
+                self._limits_title.set_tooltip_text(
+                    "Usage windows reported by Muse for the signed-in Meta account."
+                )
+            elif provider == model_catalog.PROVIDER_OPENROUTER:
                 self._limits_title.set_tooltip_text(
                     "Credit balance and spend on the OpenRouter key Helios holds."
                 )
@@ -2474,16 +2575,18 @@ class _ContextPopover(Gtk.Popover):
         if not rl_type:
             return
         provider = str(info.get("provider") or "")
+        rows = self._rate_limits
         if provider and self._rate_provider and provider != self._rate_provider:
-            return
+            rows = self._rate_store.setdefault(provider, {})
         if info.get("removed"):
-            if self._rate_limits.pop(rl_type, None) is None:
+            if rows.pop(rl_type, None) is None:
                 return
         else:
-            if self._rate_limits.get(rl_type) == info:
+            if rows.get(rl_type) == info:
                 return
-            self._rate_limits[rl_type] = dict(info)
-        self._rebuild_limits_rows()
+            rows[rl_type] = dict(info)
+        if rows is self._rate_limits:
+            self._rebuild_limits_rows()
 
     # ── Internals ────────────────────────────────────────────────
 
