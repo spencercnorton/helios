@@ -69,3 +69,19 @@ def test_popover_keeps_each_providers_rows_across_a_switch():
     assert popover._rate_limits == {}
     popover.set_model("gpt-5.5")
     assert set(popover._rate_limits) == {"codex_primary", "codex_secondary"}
+
+
+def test_gemini_turn_totals_count_cached_input():
+    from helios.backend.process.streaming import terminal_tokens
+
+    # The shape gemini_driver now emits for the measured two-call turn.
+    result = {"turn_usage": {"input_tokens": 15_319, "output_tokens": 57, "cache_read_tokens": 10_998,
+                             "cache_read_input_tokens": 10_998}}
+    assert terminal_tokens(result) == (26_317, 57)
+
+
+def test_background_claude_context_report_is_cached_for_the_switch_back():
+    window = types.SimpleNamespace(_destroyed=False, _drv_is_current=lambda _drv: False)
+    drv = types.SimpleNamespace()
+    MainWindow._on_cli_context_usage(window, drv, {"maxTokens": 967_000, "totalTokens": 41_000})
+    assert drv._helios_last_usage == (41_000, 967_000)

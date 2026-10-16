@@ -26,6 +26,11 @@ source (`source.tar.gz`) and `SHA256SUMS.txt`.
   context popover, cap the popover's wrapped notes so it no longer outgrows the
   window and clips the per-category token counts, label Muse replies "Muse"
   instead of "Claude", and give Muse and Google accurate empty-state text.
+- Count what a whole Codex turn consumed (growth of App Server's thread total)
+  in its footer and session totals instead of only its final request, count
+  Google's cached input toward "in", clear a shown OpenRouter rate limit after
+  the next successful request, and show a Google fill in the popover and ring
+  tooltip instead of guessing a 1M window.
 
 ## 0.104.1 — 2026-10-14
 

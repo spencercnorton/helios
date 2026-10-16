@@ -994,9 +994,11 @@ def test_second_turn_footer_uses_turn_usage_not_session_totals(driver_factory):
     assert results[-1]["turn_usage"]["input_tokens"] == 30
     assert results[-1]["turn_usage"]["output_tokens"] == 7
     assert results[-1]["turn_usage"]["cache_read_tokens"] == 40
-    # agy input_tokens already reports the native input count; adding a
-    # Claude-style cache alias would count cached input a second time.
-    assert "cache_read_input_tokens" not in results[-1]["turn_usage"]
+    # agy input_tokens EXCLUDES cache reads. Measured 2026-10-16 on a two-call
+    # gemini-4-argon turn: steps reported 13,044 then 2,275 + 10,998 cached
+    # (the same ~13k prompt), and the result summed input to 15,319. So the
+    # Claude-style alias is what makes "in" count the prompt actually sent.
+    assert results[-1]["turn_usage"]["cache_read_input_tokens"] == 40
 
 
 def test_first_resumed_result_sets_an_unknown_usage_baseline(driver_factory):

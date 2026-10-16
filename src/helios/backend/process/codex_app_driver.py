@@ -321,6 +321,9 @@ class CodexAppServerDriver(CodexCliDriver):
         self._app_acc = app_events.CodexAppEventAccumulator(
             model=self._model,
             thread_id=self._acc.thread_id,
+            # A new thread starts from zero; a resumed one is unknown until
+            # App Server reports its running total.
+            thread_total=None if self._acc.thread_id else {},
         )
         self._app_turn_id = ""
         self._app_acceptance_recorded = False

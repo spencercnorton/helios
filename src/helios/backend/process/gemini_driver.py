@@ -479,6 +479,9 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
                         if not self._resume_session_id or self._completed_turns:
                             turn_usage[key] = max(0, value - self._cumulative_usage.get(key, 0))
                         self._cumulative_usage[key] = value
+            if "cache_read_tokens" in turn_usage:
+                # terminal_tokens' spelling, so footers and totals count cached input.
+                turn_usage["cache_read_input_tokens"] = turn_usage["cache_read_tokens"]
             normalized = {**result, "turn_usage": turn_usage, "subtype": "success" if status == "SUCCESS" else "aborted" if status in {"CANCELED", "INTERRUPTED"} else "error"}
             # The durable store uses provider-neutral names. Keep the native
             # fields in the display result, and translate only known counters

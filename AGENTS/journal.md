@@ -30,9 +30,16 @@
   "This session". GPT could not be exercised there (Codex credentials sit in the
   GNOME keyring, unreachable from the private bus). Full suite green except the
   two `test_model_catalog_refresh` failures that also fail on `main`.
-- **Not done:** Codex's per-message footer still reports the last request, not
-  the turn total; Muse/Gemini transcripts still store no usage, so reopening an
-  idle session of theirs shows 0 until its next turn.
+- **GPT review (gpt-6.1-sol, two passes) — fixed:** a 429 row never cleared
+  (now removed after the next reported round); Google fill missing from the
+  popover/tooltip; Codex footer/totals counted only the last request (now the
+  delta of `tokenUsage.total`, seeded `{}` for a new thread, unknown for the
+  first turn after a resume); Gemini "in" ignored `cache_read_tokens` — the old
+  test claiming agy input already includes cache was contradicted by the
+  measurement and was corrected; background Claude `get_context_usage` was not
+  cached; `_apply_context_fill` guessed 1M for an unknown Google window.
+- **Not done:** Muse/Gemini transcripts store no usage, so reopening an idle
+  session of theirs shows 0 until its next turn.
 
 
 ## 2026-10-14 — Fix startup provider adoption race and in-flight resume driver tracking

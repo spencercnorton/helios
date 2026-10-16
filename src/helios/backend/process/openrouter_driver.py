@@ -406,6 +406,7 @@ class OpenRouterDriver(UserMessageQueueMixin, GObject.Object):
         self._started = False
         self._closed = False
         self._busy = False
+        self._rate_limited = False  # a 429 row is showing
         self._worker: threading.Thread | None = None
         self._cancel_token: CancellationToken | None = None
         self.last_activity: float = time.monotonic()
@@ -1053,6 +1054,14 @@ class OpenRouterDriver(UserMessageQueueMixin, GObject.Object):
                 # would multiply the reported fill by the round count. Cost is
                 # cumulative and is accumulated separately.
                 last_usage = usage
+                if usage.reported and self._rate_limited:
+                    # A request went through: the 429 row is history now.
+                    self._rate_limited = False
+                    GLib.idle_add(self.emit, "rate-limit-updated", {
+                        "rateLimitType": "openrouter",
+                        "provider": model_catalog.PROVIDER_OPENROUTER,
+                        "removed": True,
+                    })
                 if usage.reported and usage.input_tokens > 0:
                     # Move the ring during long tool loops, not only at the end.
                     GLib.idle_add(
@@ -2166,6 +2175,7 @@ class OpenRouterDriver(UserMessageQueueMixin, GObject.Object):
         matches what ``ChatToolbar.update_rate_limit`` consumes: it keys on
         ``rateLimitType`` and drops anything without it.
         """
+        self._rate_limited = True
         GLib.idle_add(self.emit, "rate-limit-updated", {
             "rateLimitType": "openrouter",
             # The toolbar filters rows by catalog provider id; the upstream

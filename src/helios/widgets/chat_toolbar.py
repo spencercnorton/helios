@@ -1847,6 +1847,8 @@ class _ContextMeter(Gtk.DrawingArea):
             self.set_tooltip_text(
                 f"Context: {self._used:,} / {self._total:,} tokens ({pct}%)"
             )
+        elif self._used > 0:
+            self.set_tooltip_text(f"Context: {self._used:,} tokens (window unknown)")
         else:
             self.set_tooltip_text("Context window")
 
@@ -2401,6 +2403,11 @@ class _ContextPopover(Gtk.Popover):
             # does, show the measured total as one solid bar rather than a
             # stale breakdown from the previous turn.
             self._bar.set_plain(used, total)
+        elif used > 0:
+            # Measured fill, but the provider publishes no window (Google).
+            self._has_turn = True
+            self._used = used
+            self._usage_label.set_label(f"{used:,} tokens (window size not published)")
         else:
             # Reset (fresh chat / session switch). Keep showing the selected
             # model's window cap if we know it, just with no usage yet.

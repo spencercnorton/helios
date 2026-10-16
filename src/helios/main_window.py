@@ -7003,15 +7003,17 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         it is the one the CLI's own /context shows.
         """
 
-        if self._destroyed or not self._drv_is_current(drv):
-            return
-        if not isinstance(payload, dict):
+        if self._destroyed or not isinstance(payload, dict):
             return
         total = int(payload.get("maxTokens") or 0)
         used = int(payload.get("totalTokens") or 0)
         if total <= 0:
             return
+        # Cached before the visibility gate, like usage-updated: a /compact
+        # that finishes in the background must not restore the old fill.
         drv._helios_last_usage = (used, total)
+        if not self._drv_is_current(drv):
+            return
         self._chat_toolbar.set_context_usage(used, total)
         self._chat_toolbar.set_measured_breakdown(payload)
 
@@ -7227,7 +7229,7 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         # from the selected model — but bump to 1M when the fill exceeds the
         # 200K base (the session was clearly a 1M-context one).
         window = context_window_for_model(model)
-        if used > window:
+        if 0 < window < used:
             window = 1_000_000
         self._chat_toolbar.set_context_usage(used, window)
         return False
