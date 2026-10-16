@@ -7,6 +7,7 @@ import pytest
 from helios.backend.browser_target import (
     TargetError,
     consent_scope,
+    delocalize,
     free_roots,
     is_web_scope,
     localize,
@@ -38,11 +39,7 @@ def test_everything_else_is_refused(tmp_path, text):
         resolve(text, str(tmp_path))
 
 
-def test_project_files_and_loopback_are_free_everything_else_asks(tmp_path, monkeypatch):
-    import tempfile
-
-    (tmp_path / "scratch").mkdir()
-    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path / "scratch"))
+def test_project_files_and_loopback_are_free_everything_else_asks(tmp_path):
     project = tmp_path / "proj"
     (project / "out").mkdir(parents=True)
     (project / "out" / "r.html").write_text("ok")
@@ -67,6 +64,20 @@ def test_project_files_and_loopback_are_free_everything_else_asks(tmp_path, monk
     assert consent_scope("about:blank", cwd) == "about:blank"
     assert is_web_scope("mail.example.com") and not is_web_scope("/etc/passwd")
     assert not is_web_scope("about:blank")
+    # The temp directory is shared by every program: not free either.
+    assert free_roots(str(project)) == [str(project.resolve())]
+    assert consent_scope(localize("file:///tmp/x.html", ""), cwd) == "/tmp/x.html"
+
+
+def test_fragments_survive_and_project_urls_map_back_for_other_apps(tmp_path):
+    project = tmp_path / "proj"  # tmp_path is HOME under conftest
+    project.mkdir()
+    (project / "r.html").write_text("ok")
+    local = localize(resolve(f"file://{project}/r.html?x=1#kpi"), str(project))
+    assert local.startswith("helios-file://") and local.endswith("/r.html?x=1#kpi")
+    assert delocalize(local) == f"file://{project.resolve()}/r.html?x=1#kpi"
+    with pytest.raises(TargetError):
+        resolve("file://[::1/x")
 
 
 def test_a_folder_containing_the_home_frees_nothing(tmp_path, monkeypatch):

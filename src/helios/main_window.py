@@ -3644,12 +3644,14 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         elif self._destroyed:
             reply({"ok": False, "error": "Helios is closing."})
         else:
-            # The folder decides which files are free, so accept only one a
-            # live session was started in; anything else on the bus gets the
-            # selected chat's folder instead.
-            live = {str(getattr(d, "_cwd", "") or "") for d in self._driver_manager.drivers_for_shutdown()}
-            if args.get("_cwd") not in live - {""}:
-                args.pop("_cwd", None)
+            # Folder and agent come from the token Helios issued at spawn,
+            # never from the payload; an unknown caller gets nothing.
+            session = browser_tools.session_for(args.pop("_token", None))
+            args = {k: v for k, v in args.items() if not str(k).startswith("_")}
+            if session is None:
+                reply({"ok": False, "error": "Unknown Helios session."})
+                return
+            args["_cwd"], args["_agent"] = session
             self._browser.handle_call(tool, args, reply)
 
     def _save_window_layout(self) -> None:

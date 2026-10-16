@@ -110,3 +110,60 @@ def test_project_files_cannot_reach_outside_through_symlinks_or_dotdot(tmp_path,
     assert index["ok"] and index["title"] == "Index", index
     read = _call(pane, "browser_read", tab=index["tab"])
     assert "inside" in read["text"] and "SECRET" not in read["text"]
+
+
+class _Request:
+    def __init__(self, uri, view_uri):
+        from urllib.parse import urlsplit
+
+        self._uri, self.view_uri, self.result = uri, view_uri, None
+        self._path = urlsplit(uri).path
+
+    def get_uri(self):
+        return self._uri
+
+    def get_path(self):
+        return self._path
+
+    def get_web_view(self):
+        return type("View", (), {"get_uri": lambda _self: self.view_uri})()
+
+    def finish(self, stream, length, mime):
+        self.result = ("ok", stream.read_bytes(length, None).get_data(), mime)
+
+    def finish_error(self, error):
+        self.result = ("error", error.message)
+
+
+def test_a_project_root_is_served_only_to_its_own_tab_and_only_inside(tmp_path):
+    from helios.backend.browser_target import localize
+    from helios.widgets.browser_pane import _serve_project_file
+
+    (tmp_path / "a").mkdir()
+    (tmp_path / "a" / "notes.log").write_text("plain text")
+    (tmp_path / "secret").write_text("SECRET")
+    (tmp_path / "a" / "out").symlink_to(tmp_path / "secret")
+    page = localize((tmp_path / "a" / "notes.log").as_uri(), str(tmp_path / "a"))
+    key = page.split("/")[2]
+
+    ok = _Request(page, f"helios-file://{key}/index.html")
+    _serve_project_file(ok)
+    assert ok.result == ("ok", b"plain text", "text/plain; charset=utf-8")
+    for uri, view_uri in [
+        (page, "helios-file://someotherkey/frame.html"),       # another chat's tab
+        (f"helios-file://{key}/out", f"helios-file://{key}/"),  # symlink leaving the root
+        (f"helios-file://{key}/%00x", f"helios-file://{key}/"),  # NUL: ValueError, not OSError
+        (f"helios-file://{key}/", f"helios-file://{key}/"),     # a directory
+    ]:
+        request = _Request(uri, view_uri)
+        _serve_project_file(request)
+        assert request.result[0] == "error", uri
+
+
+def test_text_without_a_known_type_is_shown_as_text():
+    from helios.widgets.browser_pane import _mime
+
+    assert _mime("/p/build.log", b"line 1\n") == "text/plain; charset=utf-8"
+    assert _mime("/p/main.rs", "fn main() {} // é".encode()) == "text/plain; charset=utf-8"
+    assert _mime("/p/report.html", b"<h1>") == "text/html"
+    assert _mime("/p/blob.bin", b"\x00\x01binary") == "application/octet-stream"

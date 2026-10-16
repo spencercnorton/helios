@@ -843,7 +843,8 @@ def test_browser_pane_rides_in_the_same_mcp_config_as_the_router():
     try:
         config = json.loads((argv := _router_argv(True))[argv.index("--mcp-config") + 1])
         assert list(config["mcpServers"]) == ["helios-router", "helios_browser"]
-        assert config["mcpServers"]["helios_browser"]["args"][-2:] == ["--agent", "Claude"]
+        token = config["mcpServers"]["helios_browser"]["args"][-1]
+        assert browser_tools.session_for(token)[1] == "Claude"
         config = json.loads((argv := _router_argv(False))[argv.index("--mcp-config") + 1])
         assert list(config["mcpServers"]) == ["helios_browser"]
     finally:

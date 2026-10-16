@@ -9,6 +9,7 @@ headless tests) :func:`server_entry` returns ``None`` and nothing is injected.
 
 from __future__ import annotations
 
+import secrets
 from pathlib import Path
 
 from helios import APP_ID
@@ -32,8 +33,10 @@ INSTRUCTIONS = (
     "Helios has a browser pane beside this chat. Use browser_open to show the "
     "person an HTML report, a local file or a dev server (a path, "
     "localhost:PORT or a URL) instead of only describing it. browser_read and "
-    "browser_screenshot let you check what rendered; reading a non-local site "
-    "asks the person first."
+    "browser_screenshot let you check what rendered. Files in your working "
+    "folder and localhost are yours to use; other sites and files ask the "
+    "person first. Reference a report's assets by relative path inside the "
+    "folder: absolute file paths do not load."
 )
 
 _TAB = {"type": "string", "description": "Tab id from browser_open or browser_tabs; defaults to the selected tab."}
@@ -98,6 +101,8 @@ TOOLS = [
 TOOL_NAMES = frozenset(tool["name"] for tool in TOOLS)
 
 _bus_address = ""
+#: token -> (cwd, agent label). The window trusts these, never the caller's word.
+_sessions: dict[str, tuple[str, str]] = {}
 
 
 def publish(bus_address: str) -> None:
@@ -113,11 +118,19 @@ def launcher_path() -> Path:
 
 
 def server_entry(cwd: str, agent: str) -> dict | None:
-    """``{"command", "args"}`` for one provider session, or None if unavailable."""
+    """``{"command", "args"}`` for one provider session, or None if unavailable.
+
+    The session's folder decides which files are free, so it is bound here to
+    a token rather than sent by the caller: any process on the session bus can
+    call the pane, but only tokens Helios issued name a folder.
+    """
     launcher = launcher_path()
     if not _bus_address or not launcher.is_file():
         return None
-    return {
-        "command": str(launcher),
-        "args": ["--bus", _bus_address, "--cwd", cwd or str(Path.home()), "--agent", agent],
-    }
+    token = secrets.token_urlsafe(18)
+    _sessions[token] = (cwd or "", agent)
+    return {"command": str(launcher), "args": ["--bus", _bus_address, "--token", token]}
+
+
+def session_for(token: object) -> tuple[str, str] | None:
+    return _sessions.get(token) if isinstance(token, str) else None

@@ -30,10 +30,9 @@ Caller = Callable[[str, dict], dict]
 
 
 class BrowserMcpServer:
-    def __init__(self, call: Caller, *, cwd: str, agent: str) -> None:
+    def __init__(self, call: Caller, *, token: str) -> None:
         self._call = call
-        self._cwd = cwd
-        self._agent = agent
+        self._token = token
 
     def handle(self, message: object) -> dict[str, Any] | None:
         if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
@@ -61,7 +60,7 @@ class BrowserMcpServer:
         if name not in TOOL_NAMES or not isinstance(arguments, dict):
             return _error(request_id, -32602, "Unknown browser tool")
         try:
-            result = self._call(name, {**arguments, "_cwd": self._cwd, "_agent": self._agent})
+            result = self._call(name, {**arguments, "_token": self._token})
         except Exception as exc:  # the bus, not the page, failed
             result = {"ok": False, "error": f"Helios is not reachable: {exc}"}
         return _success(request_id, _content(result))
@@ -106,10 +105,9 @@ def dbus_caller(address: str) -> Caller:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Helios browser pane MCP server")
     parser.add_argument("--bus", required=True)
-    parser.add_argument("--cwd", required=True)
-    parser.add_argument("--agent", default="Agent")
+    parser.add_argument("--token", required=True)
     args = parser.parse_args(argv)
-    return serve(BrowserMcpServer(dbus_caller(args.bus), cwd=args.cwd, agent=args.agent))
+    return serve(BrowserMcpServer(dbus_caller(args.bus), token=args.token))
 
 
 if __name__ == "__main__":

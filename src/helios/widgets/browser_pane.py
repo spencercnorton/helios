@@ -89,31 +89,59 @@ def _serve_project_file(request) -> None:
     """``helios-file://<root>/<path>``: only files still inside that root.
 
     The check runs on the file actually opened (its /proc/self/fd link), so a
-    symlink swapped between check and open cannot point it elsewhere.
+    symlink swapped between check and open cannot point it elsewhere. A root
+    is served only to the tab showing it: another chat's page that learned the
+    key cannot frame or script that project's files.
     """
-    root = browser_target.root_for(urlsplit(request.get_uri()).hostname or "")
+    key = urlsplit(request.get_uri()).hostname or ""
+    root = browser_target.root_for(key)
+    view = request.get_web_view()
     fd = -1
     try:
-        if root is None:
-            raise PermissionError("unknown root")
+        if root is None or view is None or urlsplit(view.get_uri() or "").hostname != key:
+            raise PermissionError("not this tab's project")
         fd = os.open(os.path.join(root, unquote(request.get_path()).lstrip("/")),
                      os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK)
         real = os.readlink(f"/proc/self/fd/{fd}")
-        info = os.fstat(fd)
-        if not browser_target.within(real, root) or not stat.S_ISREG(info.st_mode) \
-                or info.st_size > _MAX_FILE_BYTES:
+        if not browser_target.within(real, root) or not stat.S_ISREG(os.fstat(fd).st_mode):
             raise PermissionError("outside the project")
         with os.fdopen(fd, "rb") as handle:
             fd = -1
-            data = handle.read()
-    except OSError as exc:
+            data = handle.read(_MAX_FILE_BYTES + 1)
+        if len(data) > _MAX_FILE_BYTES:
+            raise PermissionError("too large to show")
+    except (OSError, ValueError) as exc:  # ValueError: a NUL in the path
+        request.finish_error(GLib.Error.new_literal(
+            Gio.io_error_quark(), f"Not served: {getattr(exc, 'strerror', None) or exc}",
+            int(Gio.IOErrorEnum.PERMISSION_DENIED)))
+        return
+    finally:
         if fd >= 0:
             os.close(fd)
-        request.finish_error(GLib.Error.new_literal(
-            Gio.io_error_quark(), f"Not served: {exc.strerror or exc}", int(Gio.IOErrorEnum.PERMISSION_DENIED)))
-        return
-    mime = mimetypes.guess_type(real)[0] or "application/octet-stream"
-    request.finish(Gio.MemoryInputStream.new_from_bytes(GLib.Bytes.new(data)), len(data), mime)
+    request.finish(Gio.MemoryInputStream.new_from_bytes(GLib.Bytes.new(data)), len(data), _mime(real, data))
+
+
+def _mime(path: str, data: bytes) -> str:
+    """WebKit refuses to show octet-stream, which is what logs, READMEs and
+    most source files guess as; readable text is shown as text."""
+    guess = mimetypes.guess_type(path)[0] or ""
+    if guess.startswith(("text/", "image/", "audio/", "video/", "font/")) or guess in _SHOWN_TYPES:
+        return guess
+    head = data[:8192]
+    if b"\0" not in head:
+        try:
+            head.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            if exc.start < len(head) - 4:  # not merely a character cut at 8 KiB
+                return guess or "application/octet-stream"
+        return "text/plain; charset=utf-8"
+    return guess or "application/octet-stream"
+
+
+_SHOWN_TYPES = frozenset({
+    "application/pdf", "application/json", "application/xml", "application/javascript",
+    "application/xhtml+xml", "application/wasm",
+})
 
 
 def _always_allowed() -> set[str]:
@@ -183,6 +211,10 @@ class BrowserPane(Gtk.Box):
         state = paths.state_dir() / "browser"
         # Persistent, and separate from the person's own browser profile.
         self._session = self._webkit.NetworkSession.new(str(state / "data"), str(state / "cache"))
+        # Blocks third-party cookies: a free page (project file, localhost)
+        # that frames or fetches a site the person is signed in to must not
+        # send those sign-ins, or a screenshot would show their data.
+        self._session.set_itp_enabled(True)
 
         bar = Gtk.Box(spacing=4)
         bar.add_css_class("toolbar")
@@ -382,7 +414,9 @@ class BrowserPane(Gtk.Box):
     # stays on the same site; "Always" is per host and persisted.
 
     def _call_cwd(self, args: dict) -> str:
-        return str(args.get("_cwd") or self._cwd() or "")
+        # An agent call carries its session's folder (possibly none); only the
+        # person's own address bar uses the selected chat's.
+        return str(args["_cwd"]) if "_cwd" in args else str(self._cwd() or "")
 
     def _shareable(self, view, url: str, cwd: str, reply: Reply | None = None) -> bool:
         scope = consent_scope(url, cwd)
@@ -421,7 +455,7 @@ class BrowserPane(Gtk.Box):
             body = ("It can load this site and see its text and screenshots, including "
                     "anything you are signed in to in the Helios browser.")
         elif scope.startswith("/"):
-            heading = f"Let {agent} {verb} a file outside the project?"
+            heading = f"Let {agent} {verb} {'files in another folder' if os.path.isdir(scope) else 'a file outside its folder'}?"
             body = scope
         else:
             heading = f"Let {agent} {verb} this page?"
@@ -580,7 +614,7 @@ class BrowserPane(Gtk.Box):
         self._back.set_sensitive(bool(view and view.can_go_back()))
         self._forward.set_sensitive(bool(view and view.can_go_forward()))
         self._reload.set_sensitive(view is not None)
-        self._external.set_sensitive(bool(view and (view.get_uri() or "").startswith(("http", "file"))))
+        self._external.set_sensitive(bool(view and (view.get_uri() or "").startswith(("http", "file", "helios-file"))))
         if not self._address.has_focus():
             self._address.set_text((view.get_uri() or "") if view else "")
 
@@ -610,7 +644,7 @@ class BrowserPane(Gtk.Box):
     def _open_external(self) -> None:
         view = self._selected_view()
         if view is not None and view.get_uri():
-            Gtk.UriLauncher.new(view.get_uri()).launch(self.get_root(), None, None)
+            Gtk.UriLauncher.new(browser_target.delocalize(view.get_uri())).launch(self.get_root(), None, None)
 
     # ── helpers ─────────────────────────────────────────────────────────
 
@@ -633,8 +667,10 @@ class BrowserPane(Gtk.Box):
             return {"ok": False, "error": "The tab was closed."}
         url, title = view.get_uri() or "", view.get_title() or ""
         if not self._shareable(view, url, cwd):
-            # A page the person reached themselves: say where, not what.
+            # A page the person reached themselves: say where, not what. A
+            # helios-file host is a project key, which is itself a secret.
             parts = urlsplit(url)
-            url = f"{parts.scheme}://{parts.hostname}/" if parts.hostname else "(not shared)"
+            url = f"{parts.scheme}://{parts.hostname}/" \
+                if parts.hostname and parts.scheme in ("http", "https") else "(not shared)"
             title = "(not shared)"
         return {"ok": True, "tab": view._helios_tab_id, "title": title, "url": url, "status": status}

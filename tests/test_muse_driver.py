@@ -236,6 +236,6 @@ def test_session_mcp_browser_is_offered_only_when_granted(tmp_path):
         driver._begin_session()
         server = driver._proc.stdin.frames()[-1]["params"]["config"]["mcpServers"]["helios_browser"]
         assert server["transport"] == "stdio" and server["mode"] == "optional"
-        assert server["args"][-1] == "Muse"
+        assert browser_tools.session_for(server["args"][-1])[1] == "Muse"
     finally:
         browser_tools.publish("")

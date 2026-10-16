@@ -43,8 +43,21 @@
   refuses `file:` frames from that origin (verified by snapshot). `file://` is
   never free; history moves and reloads re-ask; backslashes/control chars are
   refused; the dialog expires at 170 s and a late answer does nothing; grants
-  clear when the tab leaves their scope; the window only accepts a `_cwd` that a
-  live session was started in, and a folder containing `$HOME` frees nothing.
+  clear when the tab leaves their scope; a folder containing `$HOME` frees
+  nothing.
+- **Third GPT pass — fixed:** another chat could learn a root key from
+  `browser_tabs` and frame/script that project (now: the handler serves a root
+  only when the requesting tab's own URL is on that key, and helios-file URLs
+  are always redacted); remote frames/fetches from free pages carried the
+  pane's cookies (now: ITP on the persistent session — measured, the framed
+  and `credentials:include` requests went from `sid=SIGNEDIN` to no cookie);
+  `.log`/README/source files failed as octet-stream (UTF-8 sniff →
+  text/plain); the caller-supplied `_cwd` (now a per-spawn token →
+  `(cwd, agent)` registry in `browser_tools`; unknown tokens are refused, never
+  widened to the selected chat); NUL paths raised ValueError unanswered; the
+  64 MiB cap is enforced on the read; fragments/queries kept; "Open in your
+  browser" maps back via `delocalize`; `/tmp` is no longer a free root (it
+  holds other agents' transcripts).
 - **Not done:** click/type/eval tools; Gemini; clear-browsing-data UI; GPT
   inside the GUI rig (Codex credentials are in the GNOME keyring); remote
   subresources embedded in a local page load without asking.
