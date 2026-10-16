@@ -94,8 +94,9 @@ servers in a tabbed browser pane next to the transcript (Ctrl+Shift+B), and
 can read or screenshot what rendered to check their own work. You browse it
 like any browser — back, forward, reload, an address bar that also takes a file
 path or `localhost:5173` — and it keeps its own sign-ins, separate from your
-browser. Files and loopback servers are the agent's to read; any other site asks
-you first, per host. Claude, GPT, Muse and OpenRouter sessions get the tools;
+browser. The project's own files and loopback servers are the agent's to use;
+opening or reading any other site or file asks you first (once per tab, or
+always for a site), and pages you reached yourself are not shared until it does. Claude, GPT, Muse and OpenRouter sessions get the tools;
 Gemini's CLI has no per-session MCP option and uses its own browser.
 
 **Usage you can read at a glance.** Beside the context ring sits the fill and

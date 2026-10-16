@@ -3613,8 +3613,10 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         if connection is None or not self._browser.available:
             return
         node = Gio.DBusNodeInfo.new_for_xml(browser_tools.INTERFACE_XML)
+        # closures2 is GLib 2.84+; the older call is what 24.04 (2.80) has.
+        register = getattr(connection, "register_object_with_closures2", None) or connection.register_object
         try:
-            self._browser_bus_id = connection.register_object_with_closures2(
+            self._browser_bus_id = register(
                 browser_tools.OBJECT_PATH, node.interfaces[0], self._on_browser_bus_call, None, None,
             )
             address = Gio.dbus_address_get_for_bus_sync(Gio.BusType.SESSION, None)

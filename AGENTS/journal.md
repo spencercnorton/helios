@@ -25,8 +25,19 @@
   `details.html`; `codex exec` with the same server config read it (fails with
   "requires approval" unless `approve`); a raw App Server `thread/start` with
   the Helios thread config reported `helios_browser` `ready`.
+- **GPT review (gpt-6.1-sol) — fixed:** consent applied to a stale host;
+  every `file://` path was "local" (an agent could read `~/.codex/auth.json`);
+  agent `browser_open` of any remote URL was ungated (an egress path even under
+  a no-network Codex sandbox, since the tool is pre-approved); `browser_tabs`
+  leaked titles/URLs of pages the person opened; `about:blank` popups inherit
+  their opener's origin; deferred steps could raise without replying;
+  screenshot race; timed-out waiters leaked; `register_object_with_closures2`
+  is GLib 2.84+ (24.04 has 2.80); PNGs over 1 MiB broke OpenRouter's MCP client;
+  Codex's 60 s tool timeout vs the consent dialog. Now `consent_scope` frees
+  only the chat's cwd (never `/` or home), the temp dir and loopback.
 - **Not done:** click/type/eval tools; Gemini; clear-browsing-data UI; GPT
-  inside the GUI rig (Codex credentials are in the GNOME keyring).
+  inside the GUI rig (Codex credentials are in the GNOME keyring); remote
+  subresources embedded in a local page load without asking.
 
 ## 2026-10-16 — claude — Usage stats visible for every provider (v0.105.0)
 

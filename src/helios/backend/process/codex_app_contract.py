@@ -66,8 +66,9 @@ def _thread_config(cwd: str = "") -> dict[str, Any]:
         # Pre-approved: Codex asks for MCP tool approval by elicitation, which
         # Helios declines, so "prompt" would fail every call. The pane itself
         # asks before an agent reads a non-local site.
+        # The person may take a while to answer the pane's own consent dialog.
         config["mcp_servers"] = {browser_tools.MCP_SERVER_NAME: {
-            **browser, "default_tools_approval_mode": "approve"}}
+            **browser, "default_tools_approval_mode": "approve", "tool_timeout_sec": 180}}
     return config
 
 

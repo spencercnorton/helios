@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import json
+from urllib.parse import urlsplit
 from typing import Callable
 
 import gi
@@ -21,13 +22,17 @@ from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
 from helios import paths  # noqa: E402
 from helios.backend import ui_state  # noqa: E402
-from helios.backend.browser_target import TargetError, host_of, is_local, resolve  # noqa: E402
+from helios.backend.browser_target import TargetError, consent_scope, is_web_scope, resolve  # noqa: E402
 from helios.log import get_logger  # noqa: E402
 
 _log = get_logger("browser")
 
 ALLOWED_HOSTS_KEY = "browser_allowed_hosts"
 _LOAD_TIMEOUT_MS = 20_000
+# Below the MCP server's own timeout, so a wedged page still gets an answer.
+_CALL_DEADLINE_MS = 30_000
+# OpenRouter's in-process MCP client caps a message at 1 MiB of JSON.
+_MAX_PNG_BYTES = 600_000
 _DEFAULT_READ_CHARS = 20_000
 # An isolated script world: the page's own JS cannot shadow what we call.
 _READ_SCRIPT = (
@@ -36,6 +41,56 @@ _READ_SCRIPT = (
 )
 
 Reply = Callable[[dict], None]
+
+
+def _once(reply: Reply) -> Reply:
+    sent: list[bool] = []
+
+    def once(result: dict) -> None:
+        if not sent:
+            sent.append(True)
+            reply(result)
+
+    return once
+
+
+def _guarded(reply: Reply, fn: Callable, *args) -> None:
+    """Run a deferred step; any exception still answers the agent."""
+    try:
+        fn(*args)
+    except Exception as exc:
+        _log.exception("browser tool step failed")
+        reply({"ok": False, "error": str(exc)})
+
+
+def _deadline(reply: Reply) -> None:
+    def expire() -> bool:
+        reply({"ok": False, "error": "The page did not answer in time."})
+        return False
+
+    GLib.timeout_add(_CALL_DEADLINE_MS, expire)
+
+
+def _always_allowed() -> set[str]:
+    return set(ui_state.store().get(ALLOWED_HOSTS_KEY, []) or [])
+
+
+def _bounded_png(png: bytes) -> bytes:
+    """Halve a large screenshot until it fits every provider's message limit."""
+    if len(png) <= _MAX_PNG_BYTES:
+        return png
+    gi.require_version("GdkPixbuf", "2.0")
+    from gi.repository import GdkPixbuf
+
+    loader = GdkPixbuf.PixbufLoader.new_with_type("png")
+    loader.write(png)
+    loader.close()
+    image = loader.get_pixbuf()
+    while len(png) > _MAX_PNG_BYTES and image.get_width() > 200:
+        image = image.scale_simple(image.get_width() // 2, image.get_height() // 2,
+                                   GdkPixbuf.InterpType.BILINEAR)
+        png = image.save_to_bufferv("png", [], [])[1]
+    return png
 
 
 def _load_webkit():
@@ -127,6 +182,7 @@ class BrowserPane(Gtk.Box):
 
     def handle_call(self, tool: str, args: dict, reply: Reply) -> None:
         """One agent tool call. Always replies exactly once."""
+        reply = _once(reply)
         if not self.available:
             reply({"ok": False, "error": "The Helios browser pane needs gir1.2-webkit-6.0."})
             return
@@ -134,11 +190,7 @@ class BrowserPane(Gtk.Box):
         if handler is None:
             reply({"ok": False, "error": f"Unknown browser tool: {tool}"})
             return
-        try:
-            handler(args, reply)
-        except Exception as exc:  # never leave the agent hanging
-            _log.exception("browser tool %s failed", tool)
-            reply({"ok": False, "error": str(exc)})
+        _guarded(reply, handler, args, reply)
 
     # ── agent tools ─────────────────────────────────────────────────────
 
@@ -147,28 +199,43 @@ class BrowserPane(Gtk.Box):
             # Claude defers MCP schemas, so a first call may guess the name.
             reply({"ok": False, "error": 'browser_open needs "url": a file path, localhost:PORT or URL.'})
             return
+        cwd = self._call_cwd(args)
         try:
-            url = resolve(str(args["url"]), str(args.get("_cwd") or self._cwd()))
+            url = resolve(str(args["url"]), cwd)
         except TargetError as exc:
             reply({"ok": False, "error": str(exc)})
             return
-        self._on_reveal()
-        self.open(url, new_tab=args.get("new_tab", True) is not False,
-                  on_loaded=lambda view, status: reply(self._describe(view, status)))
+
+        def go() -> None:
+            self._on_reveal()
+            view = self.open(url, new_tab=args.get("new_tab", True) is not False,
+                             on_loaded=lambda view, status: reply(self._describe(view, status, cwd)))
+            view._helios_grant = consent_scope(url, cwd)
+
+        self._consent(consent_scope(url, cwd), args, "open", go, reply)
 
     def _tool_navigate(self, args: dict, reply: Reply) -> None:
         view = self._view_for(args, reply)
         if view is None:
             return
+        cwd = self._call_cwd(args)
         action, target = args.get("action"), args.get("url")
-        done = lambda status: reply(self._describe(view, status))  # noqa: E731
+        done = lambda status: reply(self._describe(view, status, cwd))  # noqa: E731
         if target:
             try:
-                url = resolve(str(target), str(args.get("_cwd") or self._cwd()))
+                url = resolve(str(target), cwd)
             except TargetError as exc:
                 reply({"ok": False, "error": str(exc)})
                 return
-            self._load(view, lambda: view.load_uri(url), done)
+
+            def go() -> None:
+                if self._alive(view, reply):
+                    view._helios_grant = consent_scope(url, cwd)
+                    self._load(view, lambda: view.load_uri(url), done)
+
+            self._consent(consent_scope(url, cwd), args, "open", go, reply)
+        # History moves revisit pages this tab already showed; what they land
+        # on is redacted in the reply unless it is shareable.
         elif action == "back" and view.can_go_back():
             self._load(view, view.go_back, done)
         elif action == "forward" and view.can_go_forward():
@@ -182,6 +249,7 @@ class BrowserPane(Gtk.Box):
         view = self._view_for(args, reply)
         if view is None:
             return
+        cwd = self._call_cwd(args)
         limit = args.get("max_chars")
         limit = limit if isinstance(limit, int) and limit > 0 else _DEFAULT_READ_CHARS
 
@@ -191,76 +259,134 @@ class BrowserPane(Gtk.Box):
             except Exception as exc:
                 reply({"ok": False, "error": f"Could not read the page: {exc}"})
                 return
+            if not self._shareable(view, str(page.get("url") or ""), cwd):
+                reply({"ok": False, "error": "The page changed while it was being read; try again."})
+                return
             text = str(page.get("text") or "")
             reply({"ok": True, "tab": view._helios_tab_id, "title": page.get("title") or "",
-                   "url": page.get("url") or view.get_uri() or "",
-                   "text": text[:limit], "truncated": len(text) > limit})
+                   "url": page.get("url") or "", "text": text[:limit], "truncated": len(text) > limit})
 
-        self._with_consent(view, args, lambda: view.evaluate_javascript(
-            _READ_SCRIPT, -1, "helios", None, None, finished), reply)
+        def run() -> None:
+            if self._alive(view, reply):
+                _deadline(reply)
+                view.evaluate_javascript(_READ_SCRIPT, -1, "helios", None, None, finished)
+
+        self._consent_for_view(view, args, "read", run, reply)
 
     def _tool_screenshot(self, args: dict, reply: Reply) -> None:
         view = self._view_for(args, reply)
         if view is None:
             return
+        cwd = self._call_cwd(args)
         WebKit = self._webkit
+        shown: list[str] = []
 
         def finished(source, result) -> None:
             try:
-                png = source.get_snapshot_finish(result).save_to_png_bytes().get_data()
+                png = _bounded_png(source.get_snapshot_finish(result).save_to_png_bytes().get_data())
             except Exception as exc:
                 reply({"ok": False, "error": f"Could not capture the page: {exc}"})
                 return
-            reply({**self._describe(view, "loaded"), "png_base64": base64.b64encode(png).decode()})
+            if (view.get_uri() or "") != shown[0]:
+                reply({"ok": False, "error": "The page changed during the screenshot; try again."})
+                return
+            reply({**self._describe(view, "loaded", cwd), "png_base64": base64.b64encode(png).decode()})
+
+        def snap() -> bool:
+            if self._alive(view, reply) and self._shareable(view, view.get_uri() or "", cwd, reply):
+                shown.append(view.get_uri() or "")
+                view.get_snapshot(WebKit.SnapshotRegion.VISIBLE, WebKit.SnapshotOptions.NONE, None, finished)
+            return False
 
         def capture() -> None:
+            if not self._alive(view, reply):
+                return
             # Only a mapped view paints, so show the pane and this tab first.
             self._on_reveal()
             self._tab_view.set_selected_page(self._tab_view.get_page(view))
-            def snap() -> bool:
-                view.get_snapshot(WebKit.SnapshotRegion.VISIBLE, WebKit.SnapshotOptions.NONE, None, finished)
-                return False
+            _deadline(reply)
+            GLib.timeout_add(150, lambda: _guarded(reply, snap) or False)
 
-            GLib.timeout_add(150, snap)
+        self._consent_for_view(view, args, "see", capture, reply)
 
-        self._with_consent(view, args, capture, reply)
-
-    def _tool_tabs(self, _args: dict, reply: Reply) -> None:
+    def _tool_tabs(self, args: dict, reply: Reply) -> None:
+        cwd = self._call_cwd(args)
         selected = self._selected_view()
         reply({"ok": True, "tabs": [
-            {**self._describe(view, "loading" if view.is_loading() else "loaded"), "selected": view is selected}
+            {**self._describe(view, "loading" if view.is_loading() else "loaded", cwd),
+             "selected": view is selected}
             for view in self._views.values()
         ]})
 
     # ── consent ─────────────────────────────────────────────────────────
+    #
+    # Same rule as the Claude desktop browser: the project's files and
+    # loopback servers are the agent's own work; any other site (which may hold
+    # the person's sign-ins) or file asks first. A yes covers that tab while it
+    # stays on the same site; "Always" is per host and persisted.
 
-    def _with_consent(self, view, args: dict, proceed: Callable[[], None], reply: Reply) -> None:
-        url = view.get_uri() or ""
-        host = host_of(url)
-        allowed = set(ui_state.store().get(ALLOWED_HOSTS_KEY, []) or [])
-        if is_local(url) or host in allowed:
+    def _call_cwd(self, args: dict) -> str:
+        return str(args.get("_cwd") or self._cwd() or "")
+
+    def _shareable(self, view, url: str, cwd: str, reply: Reply | None = None) -> bool:
+        scope = consent_scope(url, cwd)
+        ok = not scope or scope == getattr(view, "_helios_grant", None) or scope in _always_allowed()
+        if not ok and reply is not None:
+            reply({"ok": False, "error": "The page changed; ask again to use it."})
+        return ok
+
+    def _consent_for_view(self, view, args: dict, verb: str, proceed: Callable[[], None], reply: Reply) -> None:
+        cwd = self._call_cwd(args)
+        if self._shareable(view, view.get_uri() or "", cwd):
             proceed()
             return
-        agent = str(args.get("_agent") or "The agent")
-        dialog = Adw.AlertDialog(
-            heading=f"Let {agent} read {host or 'this page'}?",
-            body="It will see this page's text and a screenshot of it, including "
-                 "anything you are signed in to in the Helios browser.",
-        )
+        scope = consent_scope(view.get_uri() or "", cwd)
+
+        def granted() -> None:
+            # Consent was for what the person was shown, not wherever the tab
+            # went while they decided.
+            if not self._alive(view, reply):
+                return
+            if consent_scope(view.get_uri() or "", cwd) != scope:
+                reply({"ok": False, "error": "The page changed while waiting for consent; try again."})
+                return
+            view._helios_grant = scope
+            proceed()
+
+        self._consent(scope, args, verb, granted, reply)
+
+    def _consent(self, scope: str, args: dict, verb: str, proceed: Callable[[], None], reply: Reply) -> None:
+        if not scope or scope in _always_allowed():
+            proceed()
+            return
+        agent = " ".join(str(args.get("_agent") or "The agent").split())[:40]
+        if is_web_scope(scope):
+            heading = f"Let {agent} {verb} {scope}?"
+            body = ("It can load this site and see its text and screenshots, including "
+                    "anything you are signed in to in the Helios browser.")
+        elif scope.startswith("/"):
+            heading = f"Let {agent} {verb} a file outside the project?"
+            body = scope
+        else:
+            heading = f"Let {agent} {verb} this page?"
+            body = scope[:300]
+        dialog = Adw.AlertDialog(heading=heading, body=body)
         dialog.add_response("deny", "Deny")
-        dialog.add_response("once", "Allow once")
-        dialog.add_response("always", f"Always allow {host}")
-        dialog.set_response_appearance("always", Adw.ResponseAppearance.SUGGESTED)
+        dialog.add_response("once", "Allow")
+        if is_web_scope(scope):
+            dialog.add_response("always", f"Always allow {scope}")
+            dialog.set_response_appearance("always", Adw.ResponseAppearance.SUGGESTED)
         dialog.set_default_response("deny")
         dialog.set_close_response("deny")
 
         def answered(_dialog, response: str) -> None:
             if response == "deny":
-                reply({"ok": False, "error": f"The person declined access to {host}."})
+                reply({"ok": False, "error": f"The person declined access to {scope}."})
                 return
             if response == "always":
-                ui_state.store().set(ALLOWED_HOSTS_KEY, sorted(allowed | {host}))
-            proceed()
+                # Re-read: another dialog may have added a host meanwhile.
+                ui_state.store().set(ALLOWED_HOSTS_KEY, sorted(_always_allowed() | {scope}))
+            _guarded(reply, proceed)
 
         dialog.connect("response", answered)
         self._on_reveal()
@@ -309,6 +435,9 @@ class BrowserPane(Gtk.Box):
                     on_loaded(status)
 
             def give_up() -> bool:
+                waiters = self._waiters.get(view, [])
+                if settle in waiters:
+                    waiters.remove(settle)
                 settle("still loading")
                 return False
 
@@ -329,7 +458,10 @@ class BrowserPane(Gtk.Box):
         self._sync_toolbar()
 
     def _on_load_failed(self, view, _event, uri, error) -> bool:
-        self._settle(view, f"failed: {error.message}")
+        # A navigation superseded by the next one reports CANCELLED; the
+        # waiters belong to the navigation that replaced it.
+        if not error.matches(self._webkit.network_error_quark(), int(self._webkit.NetworkError.CANCELLED)):
+            self._settle(view, f"failed: {error.message}")
         return False  # let WebKit show its error page
 
     def _on_create(self, view, _action):
@@ -415,8 +547,19 @@ class BrowserPane(Gtk.Box):
                    else f"No tab {tab}; call browser_tabs for the open ones."})
         return view
 
-    def _describe(self, view, status: str) -> dict:
-        if view is None:
+    def _alive(self, view, reply: Reply) -> bool:
+        if view is not None and self._views.get(getattr(view, "_helios_tab_id", "")) is view:
+            return True
+        reply({"ok": False, "error": "The tab was closed."})
+        return False
+
+    def _describe(self, view, status: str, cwd: str) -> dict:
+        if view is None or self._views.get(getattr(view, "_helios_tab_id", "")) is not view:
             return {"ok": False, "error": "The tab was closed."}
-        return {"ok": True, "tab": view._helios_tab_id, "title": view.get_title() or "",
-                "url": view.get_uri() or "", "status": status}
+        url, title = view.get_uri() or "", view.get_title() or ""
+        if not self._shareable(view, url, cwd):
+            # A page the person reached themselves: say where, not what.
+            parts = urlsplit(url)
+            url = f"{parts.scheme}://{parts.hostname}/" if parts.hostname else "(not shared)"
+            title = "(not shared)"
+        return {"ok": True, "tab": view._helios_tab_id, "title": title, "url": url, "status": status}
