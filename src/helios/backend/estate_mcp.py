@@ -244,9 +244,11 @@ class EstateMcp:
     Construct/discover/close outside GTK's main loop. The driver's existing
     approval path must authorize calls; no `readOnlyHint` can grant access.
     """
-    def __init__(self, cwd: str, cancellation=None, *, configs=None):
+    def __init__(self, cwd: str, cancellation=None, *, configs=None, extra=()):
         self.cwd, self.cancellation = cwd, cancellation
         self.statuses: list[dict] = []
+        #: Helios-owned servers (the browser pane) that need no estate setup.
+        self._extra = list(extra)
         self._clients: dict[str, StdioClient] = {}
         self._tools: dict[str, tuple[str, str]] = {}
         self._configs = configs
@@ -256,16 +258,19 @@ class EstateMcp:
 
     def discover(self) -> list[dict]:
         """Expose two small capabilities; no server starts until tool search."""
-        try:
-            if self._configs is None:
+        failed = []
+        if self._configs is None:
+            try:
                 self._configs = load_selected()
-        except EstateConfigError as error:
-            self.statuses = [{"name": "estate", "status": "failed", "reason": str(error), "checked_at": time.time()}]
-            return []
+            except EstateConfigError as error:
+                failed = [{"name": "estate", "status": "failed", "reason": str(error), "checked_at": time.time()}]
+                self._configs = []
+            self._configs = [*self._configs, *self._extra]
+        self.statuses = failed
         if not self._configs:
             return []
         names = [config.name for config in self._configs]
-        self.statuses = [{"name": name, "status": "configured", "reason": "Connects when tool search is used"} for name in names]
+        self.statuses = failed + [{"name": name, "status": "configured", "reason": "Connects when tool search is used"} for name in names]
         return [
             {"type": "function", "function": {"name": "EstateSearchTools",
              "description": "Discover estate tools on demand. Returns exact tool names and argument schemas; use EstateCallTool to call one. Servers: " + ", ".join(names),

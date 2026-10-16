@@ -85,6 +85,7 @@ from helios.backend.project_perms import (
     execution_mode_restriction_reason,
 )
 from helios.backend.router_client import dispatch_available, router_socket_path
+from helios.backend import browser_tools
 from helios.backend.router_tools import (
     claude_mcp_config,
     router_mcp_launcher_path,
@@ -625,22 +626,27 @@ class ClaudeCliDriver(UserMessageQueueMixin, GObject.Object):
         # outside Claude's native --max-budget-usd cap, so the Work supervisor
         # remains the follow-on that makes it accountable.
         router_launcher = router_mcp_launcher_path()
+        mcp_servers: dict = {}
         if dispatch_available():
             if not router_launcher.is_file():
                 _log.warning("Helios Router MCP launcher is missing: %s", router_launcher)
             else:
-                argv.extend(
-                    [
-                        "--mcp-config",
-                        claude_mcp_config(
-                            self._router_binding_id,
-                            socket_path=str(router_socket_path()),
-                            launcher_path=str(router_launcher),
-                        ),
-                    ]
-                )
+                mcp_servers.update(json.loads(claude_mcp_config(
+                    self._router_binding_id,
+                    socket_path=str(router_socket_path()),
+                    launcher_path=str(router_launcher),
+                ))["mcpServers"])
         elif not router_launcher.is_file():
             _log.debug("Helios Router MCP launcher is missing (broker inactive): %s", router_launcher)
+        # The browser pane's tools, whenever the window has published the pane.
+        browser = browser_tools.server_entry(self._cwd, "Claude")
+        if browser is not None:
+            mcp_servers[browser_tools.MCP_SERVER_NAME] = {"type": "stdio", **browser}
+        if mcp_servers:
+            argv.extend([
+                "--mcp-config",
+                json.dumps({"mcpServers": mcp_servers}, ensure_ascii=False, separators=(",", ":")),
+            ])
         if self._model:
             argv.extend(["--model", self._model])
         if self._resume:

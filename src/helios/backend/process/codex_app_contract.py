@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+from helios.backend import browser_tools
 from helios.backend.codex_context import CODEX_DEVELOPER_INSTRUCTIONS
 from helios.backend.project_perms import (
     AUTONOMY_MODE,
@@ -41,10 +42,10 @@ _APPROVAL_LABELS = {
 }
 
 
-def _thread_config() -> dict[str, Any]:
+def _thread_config(cwd: str = "") -> dict[str, Any]:
     """Return Helios's fail-closed Codex thread feature policy."""
 
-    return {
+    config = {
         # Helios opts into and tests the experimental request-input/tool
         # contract itself. Suppress only Codex's generic startup banner;
         # typed runtime, configuration, and Guardian warnings still flow
@@ -58,6 +59,16 @@ def _thread_config() -> dict[str, Any]:
         # lease can replace this only with family budgets and supervision.
         "agents": {"enabled": False},
     }
+    # Codex starts each thread's MCP servers from its own config layer, so the
+    # browser pane's tools ride on the thread rather than ~/.codex/config.toml.
+    browser = browser_tools.server_entry(cwd, "GPT")
+    if browser is not None:
+        # Pre-approved: Codex asks for MCP tool approval by elicitation, which
+        # Helios declines, so "prompt" would fail every call. The pane itself
+        # asks before an agent reads a non-local site.
+        config["mcp_servers"] = {browser_tools.MCP_SERVER_NAME: {
+            **browser, "default_tools_approval_mode": "approve"}}
+    return config
 
 
 def build_thread_params(
@@ -86,7 +97,7 @@ def build_thread_params(
         "personality": "pragmatic",
         # App Server keeps request_user_input outside default-mode tools unless
         # this tested feature policy is installed on the native thread.
-        "config": _thread_config(),
+        "config": _thread_config(cwd),
     }
     if thread_id:
         params["threadId"] = thread_id
@@ -276,7 +287,7 @@ def build_thread_fork_params(
         "approvalPolicy": approval,
         "approvalsReviewer": reviewer,
         "sandbox": sandbox,
-        "config": _thread_config(),
+        "config": _thread_config(cwd),
         "ephemeral": False,
         "threadSource": "helios",
     }

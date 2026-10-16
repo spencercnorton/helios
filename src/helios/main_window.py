@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
@@ -12,6 +13,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gio, Gtk  # noqa: E402
 
 from helios.backend import (
+    browser_tools,
     checkpoints,
     claude_env,
     codex_env,
@@ -178,6 +180,7 @@ from helios.widgets.activity_indicator import (
     STATE_IDLE,
 )
 from helios.widgets.agent_dock import AgentDock
+from helios.widgets.browser_pane import BrowserPane
 from helios.widgets.chat_toolbar import (
     DEFAULT_EFFORT,
     DEFAULT_MODEL,
@@ -721,7 +724,22 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         self._outer = Adw.OverlaySplitView()
         self._outer.set_sidebar_position(Gtk.PackType.END)
         self._outer.set_sidebar(right_box)
-        self._outer.set_content(self._main_stack)
+        # Browser pane: agents open reports and dev servers here (Ctrl+Shift+B).
+        # A Paned rather than another sidebar page — a report needs width the
+        # 420px right column cannot give it, and the split is resizable.
+        self._browser = BrowserPane(
+            on_reveal=lambda: self._browser_btn.set_active(True),
+            on_close=lambda: self._browser_btn.set_active(False),
+            cwd=lambda: self._current_project_cwd() or str(getattr(self._driver, "_cwd", "") or ""),
+        )
+        self._browser.set_visible(False)
+        self._browser_paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+        self._browser_paned.set_start_child(self._main_stack)
+        self._browser_paned.set_end_child(self._browser)
+        self._browser_paned.set_shrink_start_child(False)
+        self._browser_paned.set_shrink_end_child(False)
+        self._browser_paned.set_wide_handle(True)
+        self._outer.set_content(self._browser_paned)
         self._outer.set_min_sidebar_width(280)
         self._outer.set_max_sidebar_width(420)
         self._outer.set_sidebar_width_fraction(0.22)
@@ -825,6 +843,13 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         self._context_btn.connect("toggled", self._on_context_toggle)
         self._outer.connect("notify::show-sidebar", self._on_right_visibility_changed)
         header.pack_end(self._context_btn)
+
+        self._browser_btn = Gtk.ToggleButton()
+        self._browser_btn.set_icon_name("web-browser-symbolic")
+        self._browser_btn.set_tooltip_text("Toggle browser pane (Ctrl+Shift+B)")
+        self._browser_btn.connect("toggled", self._on_browser_toggle)
+        header.pack_end(self._browser_btn)
+        self._register_browser_bus()
 
         # Visible settings button — account/sign-in, permission mode, tools.
         settings_btn = Gtk.Button.new_from_icon_name("emblem-system-symbolic")
@@ -1413,6 +1438,9 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
             ("toggle-context",
              lambda *_: self._context_btn.set_active(not self._context_btn.get_active()),
              ["<Primary>3"]),
+            ("toggle-browser",
+             lambda *_: self._browser_btn.set_active(not self._browser_btn.get_active()),
+             ["<Primary><Shift>b"]),
             ("focus-composer", lambda *_: self._composer.grab_input_focus(), ["<Primary>l"]),
             ("reload", lambda *_: self._reload(), ["<Primary>r"]),
         ]
@@ -3566,6 +3594,56 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         if active:
             MainWindow._refresh_capabilities(self)
 
+    # --- browser pane ---
+
+    def _on_browser_toggle(self, button: Gtk.ToggleButton) -> None:
+        shown = button.get_active()
+        if shown and not self._browser.get_visible():
+            # Half the content width on first use, then wherever it was left.
+            width = self._browser_paned.get_width() or 1000
+            saved = int(self._ui_state.get("browser_paned", 0) or 0)
+            self._browser_paned.set_position(saved if 200 < saved < width - 200 else width // 2)
+        self._browser.set_visible(shown)
+
+    def _register_browser_bus(self) -> None:
+        """Export the pane on the session bus and tell drivers how to reach it."""
+        app = self.get_application()
+        connection = app.get_dbus_connection() if app is not None else None
+        self._browser_bus_id = 0
+        if connection is None or not self._browser.available:
+            return
+        node = Gio.DBusNodeInfo.new_for_xml(browser_tools.INTERFACE_XML)
+        try:
+            self._browser_bus_id = connection.register_object_with_closures2(
+                browser_tools.OBJECT_PATH, node.interfaces[0], self._on_browser_bus_call, None, None,
+            )
+            address = Gio.dbus_address_get_for_bus_sync(Gio.BusType.SESSION, None)
+        except GLib.Error as exc:
+            _log.warning("browser pane is not reachable by agents: %s", exc.message)
+            return
+        self._browser_bus = connection
+        browser_tools.publish(address)
+
+    def _on_browser_bus_call(self, _conn, _sender, _path, _iface, _method, params, invocation) -> None:
+        replied: list[bool] = []
+
+        def reply(result: dict) -> None:
+            if not replied:
+                replied.append(True)
+                invocation.return_value(GLib.Variant("(s)", (json.dumps(result),)))
+
+        tool, raw = params.unpack()
+        try:
+            args = json.loads(raw)
+        except ValueError:
+            args = None
+        if not isinstance(args, dict):
+            reply({"ok": False, "error": "Browser tool arguments must be a JSON object."})
+        elif self._destroyed:
+            reply({"ok": False, "error": "Helios is closing."})
+        else:
+            self._browser.handle_call(tool, args, reply)
+
     def _save_window_layout(self) -> None:
         """Persist window size + splitter positions. Cheap; called on close."""
         try:
@@ -3573,6 +3651,8 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
                 window_width=self.get_width() or 1400,
                 window_height=self.get_height() or 900,
                 sessions_paned=self._middle_paned.get_position(),
+                **({"browser_paned": self._browser_paned.get_position()}
+                   if self._browser.get_visible() else {}),
             )
         except Exception:
             pass
@@ -8996,6 +9076,10 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         changes = getattr(self, "_changes", None)
         if changes is not None:
             changes.close()
+        if getattr(self, "_browser_bus_id", 0):
+            browser_tools.publish("")
+            self._browser_bus.unregister_object(self._browser_bus_id)
+            self._browser_bus_id = 0
         # Invalidate every pre-provider dispatch before any worker/deadline idle
         # can land. Closing is not consent to send; the unsent text stays in the
         # same in-memory recovery bucket used by other background teardown.

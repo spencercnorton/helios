@@ -1,5 +1,33 @@
 # Helios — Session Journal
 
+## 2026-10-16 — claude — Browser pane for agents (v0.106.0)
+
+- **Branch:** `claude/browser-pane` (stacked on `claude/usage-stats`)
+- **Why:** parity with the Claude desktop browser pane and the ChatGPT/Codex
+  built-in browser: agents should show HTML reports and dev servers in-app.
+- **What changed:** `widgets/browser_pane.py` (Adw.TabView of WebKit 6
+  WebViews, persistent NetworkSession under `state_dir()/browser`, UTF-8
+  default charset, per-host consent dialog for non-local reads);
+  `backend/browser_target.py` (address resolution + `is_local`);
+  `backend/browser_tools.py` (tool schemas, D-Bus names, `publish`/`server_entry`);
+  `browser_mcp.py` + `scripts/helios-browser-mcp` (stdio MCP → session-bus
+  `Call`); window: `Gtk.Paned` [main stack | pane], header toggle,
+  `win.toggle-browser` Ctrl+Shift+B, `register_object_with_closures2`.
+  Injection: Claude `--mcp-config` (merged with the Router), Codex thread
+  `config.mcp_servers` with `default_tools_approval_mode="approve"`, Muse
+  `requestedCapabilities: ["sessionMcp"]` + `config.mcpServers` (optional),
+  OpenRouter `EstateMcp(extra=...)`.
+- **Validation (real app on Xvfb, private bus + state dir):** every tool via
+  the real launcher (open/navigate/back/read/screenshot/tabs, refusals); the
+  approval dialog (Allow once → read, then Deny → error); a Claude Haiku
+  session opened and read `report.html` (first guessed `target` because Claude
+  defers MCP schemas — the error now names `url`); a resumed Muse session read
+  `details.html`; `codex exec` with the same server config read it (fails with
+  "requires approval" unless `approve`); a raw App Server `thread/start` with
+  the Helios thread config reported `helios_browser` `ready`.
+- **Not done:** click/type/eval tools; Gemini; clear-browsing-data UI; GPT
+  inside the GUI rig (Codex credentials are in the GNOME keyring).
+
 ## 2026-10-16 — claude — Usage stats visible for every provider (v0.105.0)
 
 - **Branch:** `claude/usage-stats`

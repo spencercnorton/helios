@@ -20,4 +20,5 @@ override_dh_auto_install:
 	install -d debian/helios/usr/lib/helios
 	install -m 0755 scripts/helios-router-mcp debian/helios/usr/lib/helios/helios-router-mcp
 	install -m 0755 scripts/helios-estate-mcp debian/helios/usr/lib/helios/helios-estate-mcp
+	install -m 0755 scripts/helios-browser-mcp debian/helios/usr/lib/helios/helios-browser-mcp
 	install -m 0755 scripts/setup-codex-estate debian/helios/usr/lib/helios/setup-codex-estate

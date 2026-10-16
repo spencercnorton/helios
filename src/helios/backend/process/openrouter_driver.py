@@ -30,7 +30,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, GObject  # noqa: E402
 
-from helios.backend import model_catalog
+from helios.backend import browser_tools, model_catalog
 from helios.backend.openrouter import chat as or_chat
 from helios.backend.openrouter import key as or_key
 from helios.backend.openrouter.gateway import CancellationToken
@@ -73,6 +73,7 @@ from helios.backend.process.streaming import Block, StreamingAssistant
 from helios.backend.sensitive_text import scrub_sensitive
 from helios.backend.transcript import ToolResult
 from helios.backend.openrouter.continuity import ContextArchive
+from helios.backend.estate_config import ServerConfig
 from helios.backend.estate_mcp import EstateMcp
 from helios.backend.provider_instructions import InstructionContextError, compile_instructions
 from helios.log import get_logger
@@ -856,7 +857,11 @@ class OpenRouterDriver(UserMessageQueueMixin, GObject.Object):
         estate = None
         try:
             try:
-                estate = EstateMcp(self._cwd, cancellation=self._cancel_token)
+                browser = browser_tools.server_entry(self._cwd, "OpenRouter")
+                extra = {"extra": [ServerConfig(
+                    browser_tools.MCP_SERVER_NAME, browser["command"], tuple(browser["args"]),
+                )]} if browser else {}
+                estate = EstateMcp(self._cwd, cancellation=self._cancel_token, **extra)
                 self._estate = estate
                 schemas = estate.discover()  # two small schemas; no server startup
                 self._turn_tools = (*tools.TOOL_SCHEMAS, *schemas)

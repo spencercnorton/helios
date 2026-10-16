@@ -833,3 +833,18 @@ def test_router_advertisement_never_blocks_the_ui_thread():
     source = inspect.getsource(cli_driver.ClaudeCliDriver.start)
     assert "dispatch_available()" in source
     assert "RouterClient" not in source
+
+
+def test_browser_pane_rides_in_the_same_mcp_config_as_the_router():
+    """One --mcp-config carries both, so the variadic flag cannot split them."""
+    from helios.backend import browser_tools
+
+    browser_tools.publish("unix:path=/run/user/1000/bus")
+    try:
+        config = json.loads((argv := _router_argv(True))[argv.index("--mcp-config") + 1])
+        assert list(config["mcpServers"]) == ["helios-router", "helios_browser"]
+        assert config["mcpServers"]["helios_browser"]["args"][-2:] == ["--agent", "Claude"]
+        config = json.loads((argv := _router_argv(False))[argv.index("--mcp-config") + 1])
+        assert list(config["mcpServers"]) == ["helios_browser"]
+    finally:
+        browser_tools.publish("")

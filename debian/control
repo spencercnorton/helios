@@ -19,6 +19,7 @@ Depends: ${misc:Depends},
          gir1.2-adw-1,
          gir1.2-gtk-4.0,
          gir1.2-gtksource-5,
+         gir1.2-webkit-6.0,
          libgtksourceview-5-0,
          python3-gi,
          python3-gi-cairo

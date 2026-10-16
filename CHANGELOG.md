@@ -6,6 +6,23 @@ source (`source.tar.gz`) and `SHA256SUMS.txt`.
 
 ## Unreleased
 
+## 0.106.0 — 2026-10-16
+
+- Add a tabbed browser pane beside the transcript (Ctrl+Shift+B or the header
+  button) built on WebKitGTK 6: back, forward, reload, new tab, open in your
+  browser, and an address bar that takes a URL, `localhost:PORT` or a file path
+  relative to the chat's folder. It keeps its own persistent profile under
+  `~/.helios/browser/`, separate from your browser.
+- Let agents drive it through the new `helios-browser-mcp` server
+  (`browser_open`, `browser_navigate`, `browser_read`, `browser_screenshot`,
+  `browser_tabs`), injected per session for Claude, GPT (Codex thread config),
+  Muse (`sessionMcp`) and OpenRouter. Files and loopback servers are readable
+  without asking; reading or screenshotting any other host asks you first, per
+  host, with "Always allow" remembered. Gemini is not wired: Antigravity has no
+  per-session MCP option.
+- The package now depends on `gir1.2-webkit-6.0`; a source checkout without it
+  shows an install hint in the pane instead of failing.
+
 ## 0.105.0 — 2026-10-16
 
 - Show context fill and the tightest account limit beside the context ring
