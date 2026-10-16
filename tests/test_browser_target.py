@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from helios.backend.browser_target import TargetError, consent_scope, is_web_scope, resolve
+from helios.backend.browser_target import (
+    TargetError,
+    consent_scope,
+    free_roots,
+    is_web_scope,
+    localize,
+    resolve,
+)
 
 
 def test_agent_and_url_bar_text_resolve_to_loadable_urls(tmp_path):
@@ -38,21 +45,41 @@ def test_project_files_and_loopback_are_free_everything_else_asks(tmp_path, monk
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path / "scratch"))
     project = tmp_path / "proj"
     (project / "out").mkdir(parents=True)
+    (project / "out" / "r.html").write_text("ok")
     cwd = str(project)
-    for url in (f"file://{project}/out/r.html", "http://localhost:3000/", "http://127.0.0.1:8000",
-                "http://[::1]:9000/", "http://0.0.0.0:8000"):
+
+    # Project files are served through helios-file, which the agent may use...
+    local = localize(resolve("out/r.html", cwd), cwd)
+    assert local.startswith("helios-file://") and local.endswith("/out/r.html")
+    assert consent_scope(local, cwd) == ""
+    # ...but another chat's project is not this agent's to read.
+    assert consent_scope(local, str(tmp_path / "elsewhere")) == str(project)
+    for url in ("http://localhost:3000/", "http://127.0.0.1:8000", "http://[::1]:9000/", "http://0.0.0.0:8000"):
         assert consent_scope(url, cwd) == "", url
     assert consent_scope("https://mail.example.com/inbox", cwd) == "mail.example.com"
     assert consent_scope("http://localhost.evil.com/", cwd) == "localhost.evil.com"
     assert consent_scope("http://10.0.0.5:8000", cwd) == "10.0.0.5"
-    # Files outside the project — credentials, other repos — are asked about.
+    # A file:// page can frame any file, so it is never free — even in the project.
+    assert consent_scope((project / "out" / "r.html").as_uri(), cwd) == str(project / "out" / "r.html")
     assert consent_scope("file:///etc/passwd", cwd) == "/etc/passwd"
-    assert consent_scope(f"file://{project}/../secret.txt", cwd) == str(tmp_path / "secret.txt")
+    assert localize("file:///etc/passwd", cwd) == "file:///etc/passwd"
     # A popup's about:blank inherits its opener's origin, so it is never free.
     assert consent_scope("about:blank", cwd) == "about:blank"
-    # A chat rooted at the home folder or / frees nothing outside the temp dir.
-    home = str(__import__("pathlib").Path.home())
-    assert consent_scope(f"file://{home}/.codex/auth.json", home) != ""
-    assert consent_scope("file:///etc/hosts", "/") == "/etc/hosts"
     assert is_web_scope("mail.example.com") and not is_web_scope("/etc/passwd")
     assert not is_web_scope("about:blank")
+
+
+def test_a_folder_containing_the_home_frees_nothing(tmp_path, monkeypatch):
+    import os
+
+    home = os.path.realpath(os.path.expanduser("~"))
+    for cwd in ("/", os.path.dirname(home), home):
+        assert free_roots(cwd) == free_roots(""), cwd
+
+
+@pytest.mark.parametrize("text", [
+    "http://evil.com\\@localhost/", "file:///a%00b", "http://x.com/a b", "helios-file://unknown/x",
+])
+def test_addresses_python_and_webkit_would_read_differently_are_refused(text):
+    with pytest.raises(TargetError):
+        resolve(text)

@@ -3644,6 +3644,12 @@ class MainWindow(GoalWorkMixin, Adw.ApplicationWindow):
         elif self._destroyed:
             reply({"ok": False, "error": "Helios is closing."})
         else:
+            # The folder decides which files are free, so accept only one a
+            # live session was started in; anything else on the bus gets the
+            # selected chat's folder instead.
+            live = {str(getattr(d, "_cwd", "") or "") for d in self._driver_manager.drivers_for_shutdown()}
+            if args.get("_cwd") not in live - {""}:
+                args.pop("_cwd", None)
             self._browser.handle_call(tool, args, reply)
 
     def _save_window_layout(self) -> None:

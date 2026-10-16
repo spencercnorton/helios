@@ -11,18 +11,28 @@ from __future__ import annotations
 
 import base64
 import json
-from urllib.parse import urlsplit
+import mimetypes
+import os
+import stat
+from urllib.parse import unquote, urlsplit
 from typing import Callable
 
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 from helios import paths  # noqa: E402
 from helios.backend import ui_state  # noqa: E402
-from helios.backend.browser_target import TargetError, consent_scope, is_web_scope, resolve  # noqa: E402
+from helios.backend import browser_target  # noqa: E402
+from helios.backend.browser_target import (  # noqa: E402
+    TargetError,
+    consent_scope,
+    is_web_scope,
+    localize,
+    resolve,
+)
 from helios.log import get_logger  # noqa: E402
 
 _log = get_logger("browser")
@@ -33,6 +43,10 @@ _LOAD_TIMEOUT_MS = 20_000
 _CALL_DEADLINE_MS = 30_000
 # OpenRouter's in-process MCP client caps a message at 1 MiB of JSON.
 _MAX_PNG_BYTES = 600_000
+# Long enough to decide, short enough to answer before the MCP call times out.
+_CONSENT_DEADLINE_MS = 170_000
+_MAX_FILE_BYTES = 64 * 1024 * 1024
+_scheme_registered = False
 _DEFAULT_READ_CHARS = 20_000
 # An isolated script world: the page's own JS cannot shadow what we call.
 _READ_SCRIPT = (
@@ -71,6 +85,37 @@ def _deadline(reply: Reply) -> None:
     GLib.timeout_add(_CALL_DEADLINE_MS, expire)
 
 
+def _serve_project_file(request) -> None:
+    """``helios-file://<root>/<path>``: only files still inside that root.
+
+    The check runs on the file actually opened (its /proc/self/fd link), so a
+    symlink swapped between check and open cannot point it elsewhere.
+    """
+    root = browser_target.root_for(urlsplit(request.get_uri()).hostname or "")
+    fd = -1
+    try:
+        if root is None:
+            raise PermissionError("unknown root")
+        fd = os.open(os.path.join(root, unquote(request.get_path()).lstrip("/")),
+                     os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK)
+        real = os.readlink(f"/proc/self/fd/{fd}")
+        info = os.fstat(fd)
+        if not browser_target.within(real, root) or not stat.S_ISREG(info.st_mode) \
+                or info.st_size > _MAX_FILE_BYTES:
+            raise PermissionError("outside the project")
+        with os.fdopen(fd, "rb") as handle:
+            fd = -1
+            data = handle.read()
+    except OSError as exc:
+        if fd >= 0:
+            os.close(fd)
+        request.finish_error(GLib.Error.new_literal(
+            Gio.io_error_quark(), f"Not served: {exc.strerror or exc}", int(Gio.IOErrorEnum.PERMISSION_DENIED)))
+        return
+    mime = mimetypes.guess_type(real)[0] or "application/octet-stream"
+    request.finish(Gio.MemoryInputStream.new_from_bytes(GLib.Bytes.new(data)), len(data), mime)
+
+
 def _always_allowed() -> set[str]:
     return set(ui_state.store().get(ALLOWED_HOSTS_KEY, []) or [])
 
@@ -86,7 +131,7 @@ def _bounded_png(png: bytes) -> bytes:
     loader.write(png)
     loader.close()
     image = loader.get_pixbuf()
-    while len(png) > _MAX_PNG_BYTES and image.get_width() > 200:
+    while len(png) > _MAX_PNG_BYTES and max(image.get_width(), image.get_height()) > 200:
         image = image.scale_simple(image.get_width() // 2, image.get_height() // 2,
                                    GdkPixbuf.InterpType.BILINEAR)
         png = image.save_to_bufferv("png", [], [])[1]
@@ -130,6 +175,11 @@ class BrowserPane(Gtk.Box):
             self.append(page)
             return
 
+        global _scheme_registered
+        if not _scheme_registered:
+            self._webkit.WebContext.get_default().register_uri_scheme(
+                browser_target.SCHEME, _serve_project_file)
+            _scheme_registered = True
         state = paths.state_dir() / "browser"
         # Persistent, and separate from the person's own browser profile.
         self._session = self._webkit.NetworkSession.new(str(state / "data"), str(state / "cache"))
@@ -201,7 +251,7 @@ class BrowserPane(Gtk.Box):
             return
         cwd = self._call_cwd(args)
         try:
-            url = resolve(str(args["url"]), cwd)
+            url = localize(resolve(str(args["url"]), cwd), cwd)
         except TargetError as exc:
             reply({"ok": False, "error": str(exc)})
             return
@@ -221,29 +271,35 @@ class BrowserPane(Gtk.Box):
         cwd = self._call_cwd(args)
         action, target = args.get("action"), args.get("url")
         done = lambda status: reply(self._describe(view, status, cwd))  # noqa: E731
+        history = view.get_back_forward_list()
         if target:
             try:
-                url = resolve(str(target), cwd)
+                url = localize(resolve(str(target), cwd), cwd)
             except TargetError as exc:
                 reply({"ok": False, "error": str(exc)})
                 return
-
-            def go() -> None:
-                if self._alive(view, reply):
-                    view._helios_grant = consent_scope(url, cwd)
-                    self._load(view, lambda: view.load_uri(url), done)
-
-            self._consent(consent_scope(url, cwd), args, "open", go, reply)
-        # History moves revisit pages this tab already showed; what they land
-        # on is redacted in the reply unless it is shareable.
+            start = lambda: view.load_uri(url)  # noqa: E731
         elif action == "back" and view.can_go_back():
-            self._load(view, view.go_back, done)
+            url, start = history.get_back_item().get_uri(), view.go_back
         elif action == "forward" and view.can_go_forward():
-            self._load(view, view.go_forward, done)
+            url, start = history.get_forward_item().get_uri(), view.go_forward
         elif action == "reload":
-            self._load(view, view.reload, done)
+            # Re-checked: a reload re-reads a file whose symlink may have moved.
+            url, start = view.get_uri() or "", view.reload
         else:
             reply({"ok": False, "error": "Give a url, or an action this tab can take (back, forward, reload)."})
+            return
+        scope = consent_scope(url, cwd)
+
+        def go() -> None:
+            if self._alive(view, reply):
+                view._helios_grant = scope
+                self._load(view, start, done)
+
+        if scope and scope == getattr(view, "_helios_grant", None):
+            go()
+        else:
+            self._consent(scope, args, "open", go, reply)
 
     def _tool_read(self, args: dict, reply: Reply) -> None:
         view = self._view_for(args, reply)
@@ -379,7 +435,12 @@ class BrowserPane(Gtk.Box):
         dialog.set_default_response("deny")
         dialog.set_close_response("deny")
 
+        expired: list[bool] = []
+
         def answered(_dialog, response: str) -> None:
+            if expired:
+                return  # the agent was already told; a late yes must do nothing
+            GLib.source_remove(timer)
             if response == "deny":
                 reply({"ok": False, "error": f"The person declined access to {scope}."})
                 return
@@ -388,6 +449,13 @@ class BrowserPane(Gtk.Box):
                 ui_state.store().set(ALLOWED_HOSTS_KEY, sorted(_always_allowed() | {scope}))
             _guarded(reply, proceed)
 
+        def expire() -> bool:
+            expired.append(True)
+            dialog.force_close()
+            reply({"ok": False, "error": "The person did not answer in time; ask again."})
+            return False
+
+        timer = GLib.timeout_add(_CONSENT_DEADLINE_MS, expire)
         dialog.connect("response", answered)
         self._on_reveal()
         dialog.present(self)
@@ -447,7 +515,10 @@ class BrowserPane(Gtk.Box):
 
     def _settle(self, view, status: str) -> None:
         for waiter in self._waiters.pop(view, []):
-            waiter(status)
+            try:
+                waiter(status)
+            except Exception:
+                _log.exception("browser load waiter failed")
 
     def _on_load_changed(self, view, event) -> None:
         if event == self._webkit.LoadEvent.FINISHED:
@@ -470,7 +541,11 @@ class BrowserPane(Gtk.Box):
         self._tab_view.set_selected_page(self._tab_view.get_page(child))
         return child
 
-    def _on_view_changed(self, view, _pspec) -> None:
+    def _on_view_changed(self, view, pspec) -> None:
+        grant = getattr(view, "_helios_grant", None)
+        if pspec.name == "uri" and grant and consent_scope(view.get_uri() or "", self._cwd()) != grant:
+            # Left the allowed site: coming back later must ask again.
+            view._helios_grant = None
         page = self._tab_view.get_page(view)
         if page is not None:
             page.set_title(view.get_title() or view.get_uri() or "New tab")
@@ -516,7 +591,7 @@ class BrowserPane(Gtk.Box):
 
     def _on_address_activate(self, entry: Gtk.Entry) -> None:
         try:
-            url = resolve(entry.get_text(), self._cwd())
+            url = localize(resolve(entry.get_text(), self._cwd()), self._cwd())
         except TargetError as exc:
             entry.add_css_class("error")
             entry.set_tooltip_text(str(exc))

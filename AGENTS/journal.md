@@ -33,8 +33,18 @@
   their opener's origin; deferred steps could raise without replying;
   screenshot race; timed-out waiters leaked; `register_object_with_closures2`
   is GLib 2.84+ (24.04 has 2.80); PNGs over 1 MiB broke OpenRouter's MCP client;
-  Codex's 60 s tool timeout vs the consent dialog. Now `consent_scope` frees
-  only the chat's cwd (never `/` or home), the temp dir and loopback.
+  Codex's 60 s tool timeout vs the consent dialog.
+- **Second GPT pass — fixed by design, not patches:** a free `file://` page
+  could frame any file (screenshot showed it); a symlink flip + reload loaded
+  outside content; `http://evil.com\@localhost` was "localhost" to urlsplit
+  but evil.com to WebKit; dialogs outlived their call. Project/temp files now
+  load as `helios-file://<random root key>/…`, served by a handler that checks
+  the file it actually opened (`/proc/self/fd`) is inside the root — WebKit
+  refuses `file:` frames from that origin (verified by snapshot). `file://` is
+  never free; history moves and reloads re-ask; backslashes/control chars are
+  refused; the dialog expires at 170 s and a late answer does nothing; grants
+  clear when the tab leaves their scope; the window only accepts a `_cwd` that a
+  live session was started in, and a folder containing `$HOME` frees nothing.
 - **Not done:** click/type/eval tools; Gemini; clear-browsing-data UI; GPT
   inside the GUI rig (Codex credentials are in the GNOME keyring); remote
   subresources embedded in a local page load without asking.

@@ -2,10 +2,15 @@
 
 Agents and the URL bar both hand the pane loose text — ``report.html``,
 ``localhost:5173``, ``https://…`` — so one resolver turns that into a URL and
-refuses anything that is not a web page or a local file. :func:`consent_scope`
-decides what an agent may use without asking, matching the Claude desktop
-browser: the project's own files and loopback servers are its work; any other
-host may hold the person's signed-in data, and any other file may be private.
+refuses anything that is not a web page or a local file.
+
+Files inside a chat's folder (or the temp directory) are not loaded as
+``file://``: a ``file://`` page can embed any other file in a frame, and a
+symlink can point anywhere. They are rewritten to ``helios-file://<root>/…``,
+whose handler (in the pane) opens each request and checks the opened file is
+still inside that root. :func:`consent_scope` then matches the Claude desktop
+browser: those files and loopback servers are the agent's own work; any other
+site, file or page asks the person first.
 """
 
 from __future__ import annotations
@@ -13,10 +18,12 @@ from __future__ import annotations
 import ipaddress
 import os
 import re
+import secrets
 import tempfile
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import quote, unquote, urlsplit
 
+SCHEME = "helios-file"
 _SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*:", re.IGNORECASE)
 _LOOPBACK_HOST = re.compile(
     r"^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|\[::1\])(:\d+)?(?:[/?#]|$)", re.IGNORECASE
@@ -24,6 +31,12 @@ _LOOPBACK_HOST = re.compile(
 _FILE_SUFFIXES = frozenset(
     "html htm xhtml pdf svg png jpg jpeg gif webp txt json xml csv js css".split()
 )
+# Python and WebKit disagree about backslashes and control characters in URLs
+# (``http://evil.com\\@localhost`` is localhost to urlsplit, evil.com to WebKit).
+_AMBIGUOUS = re.compile(r"[\\\x00-\x1f\x7f]")
+
+#: root key -> real path. Keys are random per run so a page cannot guess one.
+_roots: dict[str, str] = {}
 
 
 class TargetError(ValueError):
@@ -35,14 +48,23 @@ def resolve(target: str, cwd: str = "") -> str:
     text = (target or "").strip()
     if not text:
         raise TargetError("Nothing to open.")
+    if _AMBIGUOUS.search(text):
+        raise TargetError("Addresses may not contain backslashes or control characters.")
     lowered = text.lower()
+    if lowered.startswith(f"{SCHEME}://"):
+        if urlsplit(text).hostname not in _roots:
+            raise TargetError("Unknown project file address.")
+        return text
     if lowered.startswith(("http://", "https://")) or lowered == "about:blank":
+        if " " in text:
+            raise TargetError("A web address may not contain spaces.")
         return text
     if lowered.startswith("file://"):
-        if not urlsplit(text).path.startswith("/"):
-            raise TargetError("A file URL must name an absolute path.")
-        return text
-    if _LOOPBACK_HOST.match(text):
+        path = unquote(urlsplit(text).path)
+        if not path.startswith("/") or _AMBIGUOUS.search(path):
+            raise TargetError("A file URL must name a plain absolute path.")
+        return Path(os.path.realpath(path)).as_uri()
+    if _LOOPBACK_HOST.match(text) and " " not in text:
         return f"http://{text}"
     if _SCHEME.match(text) and not re.match(r"^[^/:]+:\d", text):
         raise TargetError(f"Unsupported address: {text.split(':', 1)[0]}: pages only.")
@@ -50,7 +72,7 @@ def resolve(target: str, cwd: str = "") -> str:
     if not path.is_absolute():
         path = Path(cwd or ".") / path
     if path.exists():
-        return path.resolve().as_uri()
+        return Path(os.path.realpath(path)).as_uri()
     host = text.split("/", 1)[0]
     suffix = host.rsplit(".", 1)[-1].split(":", 1)[0].lower() if "." in host else ""
     # "report.html" is a missing file, not a website; a domain has a real TLD.
@@ -60,21 +82,48 @@ def resolve(target: str, cwd: str = "") -> str:
     raise TargetError(f"No such file: {path}")
 
 
+def localize(url: str, cwd: str) -> str:
+    """Serve a ``file://`` URL inside a free root through ``helios-file``."""
+    if urlsplit(url).scheme.lower() != "file":
+        return url
+    path = os.path.realpath(unquote(urlsplit(url).path))
+    roots = [r for r in free_roots(cwd) if within(path, r)]
+    if not roots:
+        return url
+    root = max(roots, key=len)
+    key = next((k for k, r in _roots.items() if r == root), None)
+    if key is None:
+        key = secrets.token_hex(8)
+        _roots[key] = root
+    return f"{SCHEME}://{key}/{quote(os.path.relpath(path, root))}"
+
+
+def root_for(key: str) -> str | None:
+    return _roots.get(key)
+
+
 def consent_scope(url: str, cwd: str = "") -> str:
     """``""`` when an agent may use this page freely, else what to ask about.
 
-    The answer is a host for web pages, a path for files outside the project,
-    and the URL itself for anything else (an ``about:blank`` popup inherits its
-    opener's origin, so it is never free).
+    The answer is a host for web pages, a path for files, and the URL itself
+    for anything else (an ``about:blank`` popup inherits its opener's origin,
+    so it is never free). Fails closed: anything unparsable needs consent.
     """
-    parts = urlsplit(url or "")
-    scheme = parts.scheme.lower()
-    if scheme == "file":
-        path = os.path.realpath(unquote(parts.path))
-        return "" if any(_within(path, root) for root in _free_roots(cwd)) else path
-    if scheme in {"http", "https"}:
-        host = (parts.hostname or "").lower()
-        return "" if _is_loopback(host) else host or url
+    try:
+        parts = urlsplit(url or "")
+        scheme = parts.scheme.lower()
+        if scheme == SCHEME:
+            root = _roots.get(parts.hostname or "")
+            # Another chat's project is not this agent's work.
+            return "" if root and root in free_roots(cwd) else (root or url)
+        if scheme == "file":
+            # Never free: a file:// page can frame any file on the machine.
+            return os.path.realpath(unquote(parts.path))
+        if scheme in {"http", "https"}:
+            host = (parts.hostname or "").lower()
+            return "" if _is_loopback(host) else host or url
+    except ValueError:
+        pass
     return url or "about:blank"
 
 
@@ -83,15 +132,18 @@ def is_web_scope(scope: str) -> bool:
     return bool(scope) and "/" not in scope and ":" not in scope
 
 
-def _free_roots(cwd: str) -> list[str]:
-    roots = [tempfile.gettempdir()]
-    # A chat rooted at / or the home folder would otherwise free every file.
-    if cwd and os.path.realpath(cwd) not in {"/", os.path.realpath(os.path.expanduser("~"))}:
-        roots.append(cwd)
-    return [os.path.realpath(root) for root in roots]
+def free_roots(cwd: str) -> list[str]:
+    """The temp directory, plus the chat's folder unless it contains the home."""
+    roots = [os.path.realpath(tempfile.gettempdir())]
+    if cwd:
+        real = os.path.realpath(cwd)
+        # "/", "/home" or the home folder itself would free the person's files.
+        if not within(os.path.realpath(os.path.expanduser("~")), real):
+            roots.append(real)
+    return roots
 
 
-def _within(path: str, root: str) -> bool:
+def within(path: str, root: str) -> bool:
     return path == root or path.startswith(root.rstrip("/") + "/")
 
 

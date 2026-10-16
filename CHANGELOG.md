@@ -16,11 +16,13 @@ source (`source.tar.gz`) and `SHA256SUMS.txt`.
 - Let agents drive it through the new `helios-browser-mcp` server
   (`browser_open`, `browser_navigate`, `browser_read`, `browser_screenshot`,
   `browser_tabs`), injected per session for Claude, GPT (Codex thread config),
-  Muse (`sessionMcp`) and OpenRouter. The chat's project files, the temp
-  directory and loopback servers need no approval; an agent opening or reading
-  any other site, any other file or a popup asks you first (the answer covers
-  that tab while it stays on the site; "Always allow" is remembered per host),
-  and tabs you navigated yourself are listed as "(not shared)". Large
+  Muse (`sessionMcp`) and OpenRouter. Files in the chat's folder and the temp
+  directory are served through a contained `helios-file://` scheme that refuses
+  anything outside that folder (symlinks and frames included), and loopback
+  servers need no approval; an agent opening, reloading or reading any other
+  site, file or popup asks you first (the answer covers that tab while it stays
+  there; "Always allow" is remembered per host), and tabs you navigated yourself
+  are listed as "(not shared)". Large
   screenshots are halved to stay within every provider's message limit. Gemini
   is not wired: Antigravity has no per-session MCP option.
 - The package now depends on `gir1.2-webkit-6.0`; a source checkout without it
