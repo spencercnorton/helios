@@ -703,13 +703,7 @@ class TranscriptView(Gtk.Box):
         """Prepare the view for a brand-new live session."""
         if self._destroyed:
             return
-        provider = model_catalog.provider_for(model)
-        self._assistant_label = (
-            "GPT" if provider == model_catalog.PROVIDER_OPENAI
-            else "OpenRouter" if provider == model_catalog.PROVIDER_OPENROUTER
-            else "Google" if provider == model_catalog.PROVIDER_GOOGLE
-            else "Claude"
-        )
+        self._assistant_label = _assistant_name(model_catalog.provider_for(model))
         self._render_token += 1
         self._session = None
         self._rendered_turns = 0
@@ -780,19 +774,7 @@ class TranscriptView(Gtk.Box):
             else session_providers.ProviderResolution()
         )
         self._assistant_label = (
-            "GPT"
-            if resolution.known
-            and resolution.provider == model_catalog.PROVIDER_OPENAI
-            else "OpenRouter"
-            if resolution.known
-            and resolution.provider == model_catalog.PROVIDER_OPENROUTER
-            else "Google"
-            if resolution.known
-            and resolution.provider == model_catalog.PROVIDER_GOOGLE
-            else "Claude"
-            if resolution.known
-            and resolution.provider == model_catalog.PROVIDER_ANTHROPIC
-            else "Assistant"
+            _assistant_name(resolution.provider) if resolution.known else "Assistant"
         )
         self._rendered_turns = 0
         # Cleared here too so the `session is None` return below cannot leave a
@@ -1085,3 +1067,17 @@ class _Banner(Gtk.Box):
         self._title.set_label("")
         self._sub_cwd.set_label("")
         self._sub_id.set_label("")
+
+
+_ASSISTANT_NAMES = {
+    model_catalog.PROVIDER_OPENAI: "GPT",
+    model_catalog.PROVIDER_OPENROUTER: "OpenRouter",
+    model_catalog.PROVIDER_GOOGLE: "Google",
+    model_catalog.PROVIDER_MUSE: "Muse",
+    model_catalog.PROVIDER_ANTHROPIC: "Claude",
+}
+
+
+def _assistant_name(provider: str) -> str:
+    """One table for both paths — the two inline chains each missed Muse."""
+    return _ASSISTANT_NAMES.get(provider, "Assistant")

@@ -994,9 +994,11 @@ def test_second_turn_footer_uses_turn_usage_not_session_totals(driver_factory):
     assert results[-1]["turn_usage"]["input_tokens"] == 30
     assert results[-1]["turn_usage"]["output_tokens"] == 7
     assert results[-1]["turn_usage"]["cache_read_tokens"] == 40
-    # agy input_tokens already reports the native input count; adding a
-    # Claude-style cache alias would count cached input a second time.
-    assert "cache_read_input_tokens" not in results[-1]["turn_usage"]
+    # agy input_tokens EXCLUDES cache reads. Measured 2026-10-16 on a two-call
+    # gemini-4-argon turn: steps reported 13,044 then 2,275 + 10,998 cached
+    # (the same ~13k prompt), and the result summed input to 15,319. So the
+    # Claude-style alias is what makes "in" count the prompt actually sent.
+    assert results[-1]["turn_usage"]["cache_read_input_tokens"] == 40
 
 
 def test_first_resumed_result_sets_an_unknown_usage_baseline(driver_factory):
@@ -1073,3 +1075,23 @@ def test_driver_manager_stop_reaches_the_google_process_group(driver_factory, mo
     assert killed == [(driver._test_process.pid, gd.signal.SIGTERM)]
     assert not driver.is_accepting_input
     assert driver.execution_attempt_id == "attempt-1"
+
+
+def test_each_finished_model_call_reports_the_context_fill(driver_factory):
+    """Per-call usage (input excludes cache reads) is the window's fill; the
+    window itself stays unknown because agy publishes none."""
+    driver = driver_factory()
+    usage = []
+    driver.connect("usage-updated", lambda _d, used, window: usage.append((used, window)))
+    driver.send_user_text("hello")
+    driver._dispatch_message(_step("user_input", 0))
+    driver._dispatch_message(_step("agent_response", 1, state="ACTIVE", text_delta="x",
+                                   usage={"input_tokens": 1, "output_tokens": 1}))
+    driver._dispatch_message(_step("agent_response", 1, usage={
+        "input_tokens": 13044, "output_tokens": 52, "thinking_tokens": 0,
+        "cache_read_tokens": 0, "total_tokens": 13096}))
+    driver._dispatch_message(_step("agent_response", 3, usage={
+        "input_tokens": 2275, "output_tokens": 5, "thinking_tokens": 0,
+        "cache_read_tokens": 10998, "total_tokens": 2280}))
+    _drain_main_context()
+    assert usage == [(13096, 0), (13278, 0)]

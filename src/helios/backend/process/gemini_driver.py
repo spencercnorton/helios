@@ -419,6 +419,7 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
                 return False
             self._last_step_index = index
             self._last_activity = time.monotonic()
+            self._emit_step_context(step)
             if kind == "user_input":
                 # Antigravity identifies accepted input by its conversation
                 # and durable step index, rather than a separate turn UUID.
@@ -478,6 +479,9 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
                         if not self._resume_session_id or self._completed_turns:
                             turn_usage[key] = max(0, value - self._cumulative_usage.get(key, 0))
                         self._cumulative_usage[key] = value
+            if "cache_read_tokens" in turn_usage:
+                # terminal_tokens' spelling, so footers and totals count cached input.
+                turn_usage["cache_read_input_tokens"] = turn_usage["cache_read_tokens"]
             normalized = {**result, "turn_usage": turn_usage, "subtype": "success" if status == "SUCCESS" else "aborted" if status in {"CANCELED", "INTERRUPTED"} else "error"}
             # The durable store uses provider-neutral names. Keep the native
             # fields in the display result, and translate only known counters
@@ -515,6 +519,22 @@ class GeminiCliDriver(UserMessageQueueMixin, GObject.Object):
             if status == "SUCCESS" and not self._stopped:
                 self._flush_user_queue()
         return False
+
+    def _emit_step_context(self, step: dict) -> None:
+        """A finished step's ``usage`` is that one model call (measured on agy,
+        2026-10-16: a two-call turn reported 13,044 then 2,275 + 10,998 cached,
+        and the result summed them). Its prompt plus output is therefore the
+        window's current fill. agy publishes no window size, so the
+        denominator stays 0 — unknown, never guessed.
+        """
+        usage = step.get("usage")
+        if step.get("state") != "DONE" or not isinstance(usage, dict):
+            return
+        counts = [usage.get(k) for k in ("input_tokens", "cache_read_tokens", "output_tokens")]
+        if not all(isinstance(v, int) and not isinstance(v, bool) and v >= 0 for v in counts):
+            return
+        if sum(counts):
+            self.emit("usage-updated", sum(counts), model_catalog.context_window_for(self._model))
 
     def _finish_predispatch_attempt(self) -> bool:
         if self._startup_pending_text is None:

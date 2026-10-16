@@ -1381,3 +1381,39 @@ def test_retry_errors_are_status_only_and_other_threads_are_ignored():
     ) == []
     assert acc.feed_line("not-json") == []
     assert acc.feed({"id": 1, "result": {}}) == []
+
+
+def _usage(total_in, total_cached, total_out, last_in=10, last_cached=0, last_out=1):
+    return notification(
+        cae.METHOD_THREAD_TOKEN_USAGE, threadId=THREAD_ID, turnId=TURN_ID,
+        tokenUsage={
+            "total": {"inputTokens": total_in, "cachedInputTokens": total_cached,
+                      "outputTokens": total_out, "reasoningOutputTokens": 0, "totalTokens": 0},
+            "last": {"inputTokens": last_in, "cachedInputTokens": last_cached,
+                     "outputTokens": last_out, "reasoningOutputTokens": 0, "totalTokens": 0},
+            "modelContextWindow": 200000,
+        },
+    )
+
+
+def _turn_result(acc, *usage_events):
+    start(acc)
+    for event in usage_events:
+        acc.feed(event)
+    return next(a.payload for a in finish(acc) if a.kind == legacy.ACT_RESULT)
+
+
+def test_turn_usage_is_the_growth_of_the_thread_total_not_the_last_request():
+    """A multi-request turn reported only its final request to the footer and
+    the session totals; the thread-lifetime total says what it really spent."""
+    acc = cae.CodexAppEventAccumulator(thread_id=THREAD_ID, thread_total={})
+    first = _turn_result(acc, _usage(1000, 600, 50), _usage(3000, 2000, 120))
+    assert first["turn_usage"] == {"input_tokens": 1000, "cache_read_input_tokens": 2000, "output_tokens": 120}
+    second = _turn_result(acc, _usage(4500, 3000, 200))
+    assert second["turn_usage"] == {"input_tokens": 500, "cache_read_input_tokens": 1000, "output_tokens": 80}
+
+
+def test_a_resumed_thread_reports_no_turn_total_until_it_has_a_baseline():
+    acc = cae.CodexAppEventAccumulator(thread_id=THREAD_ID)
+    assert "turn_usage" not in _turn_result(acc, _usage(90_000, 80_000, 4000))
+    assert _turn_result(acc, _usage(91_000, 80_500, 4100))["turn_usage"]["output_tokens"] == 100

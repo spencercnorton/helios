@@ -143,6 +143,10 @@ class CodexAppEventAccumulator:
     _review_fallback: tuple[str, str] | None = None
     _lifecycle_seen: set[tuple[str, str]] = field(default_factory=set)
     _last_token_usage: dict[str, Any] = field(default_factory=dict)
+    #: Thread-lifetime ``total`` as last reported; ``{}`` for a brand-new
+    #: thread, None when resuming until App Server reports one.
+    thread_total: dict[str, int] | None = None
+    _turn_baseline: dict[str, int] | None = None
     _rate_limits: dict[str, Any] = field(default_factory=dict)
     _rate_limits_by_id: dict[str, dict[str, Any]] = field(default_factory=dict)
     _hook_notice_ids: set[str] = field(default_factory=set)
@@ -292,6 +296,7 @@ class CodexAppEventAccumulator:
         self._review_fallback = None
         self._lifecycle_seen = set()
         self._last_token_usage = {}
+        self._turn_baseline = None if self.thread_total is None else dict(self.thread_total)
         status = turn.get("status") or "inProgress"
         return [
             Action(ACT_TURN_STATUS, self._turn_status_payload(status, turn)),
@@ -398,6 +403,17 @@ class CodexAppEventAccumulator:
             },
             "modelUsage": {},
         }
+        total = self._last_token_usage.get("total")
+        if self._turn_baseline is not None and isinstance(total, dict):
+            # ``usage`` above is the last request (the window's fill); what the
+            # whole turn consumed is the growth of the thread-lifetime total.
+            spent = {k: max(0, total.get(k, 0) - self._turn_baseline.get(k, 0))
+                     for k in ("inputTokens", "cachedInputTokens", "outputTokens")}
+            result["turn_usage"] = {
+                "input_tokens": max(0, spent["inputTokens"] - spent["cachedInputTokens"]),
+                "cache_read_input_tokens": spent["cachedInputTokens"],
+                "output_tokens": spent["outputTokens"],
+            }
         if status == "failed" and isinstance(turn.get("error"), dict):
             result["error"] = copy.deepcopy(turn["error"])
         return result
@@ -816,6 +832,7 @@ class CodexAppEventAccumulator:
             return []
         token_usage = _normalize_token_usage(raw)
         self._last_token_usage = token_usage
+        self.thread_total = dict(token_usage["total"])
         payload = {
             "threadId": _string(params.get("threadId"), self.thread_id),
             "turnId": _string(params.get("turnId"), self.turn_id),

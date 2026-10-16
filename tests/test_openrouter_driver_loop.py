@@ -1887,3 +1887,32 @@ def test_oversized_tool_output_is_archived_and_bounded_inline(driver, monkeypatc
     assert "archived to session context" in content
     recovered = json.loads(ContextArchive(driver.session_id).read({"query": "TAIL_MARKER"}))
     assert recovered["total_chunks"] > 0
+
+
+def test_a_successful_round_clears_a_shown_rate_limit_and_moves_the_ring(driver, monkeypatch):
+    """A one-off 429 used to leave "rate limit reached" in the caption forever."""
+    captured, rows, usage = {}, [], []
+
+    class FakeThread:
+        def __init__(self, *, target, args, daemon, name):
+            captured["run"] = lambda: target(*args)
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(od.threading, "Thread", FakeThread)
+    monkeypatch.setattr(od.GLib, "idle_add", lambda callback, *args: callback(*args))
+    monkeypatch.setattr(od.or_chat, "stream_chat", _stream(
+        text="done", finish_reason="stop",
+        usage=or_chat.ChatUsage(input_tokens=1_200, output_tokens=30, reported=True)))
+    driver.set_execution_attempt_controller(lambda _d: ("attempt-429", ""), lambda *_a: None)
+    driver.connect("rate-limit-updated", lambda _d, row: rows.append(row))
+    driver.connect("usage-updated", lambda _d, used, window: usage.append(used))
+
+    driver._emit_rate_limit(or_chat.ChatError(or_chat.ChatErrorKind.RATE_LIMIT, "slow down"))
+    driver.send_user_text("after the limit")
+    captured["run"]()
+
+    assert rows[0]["provider"] == "openrouter" and rows[0]["status"] == "blocked"
+    assert rows[1] == {"rateLimitType": "openrouter", "provider": "openrouter", "removed": True}
+    assert usage and set(usage) == {1_230}
