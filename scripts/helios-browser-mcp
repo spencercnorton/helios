@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(
+    CDPATH=''
+    cd -- "$(dirname -- "$0")"
+    pwd
+)
+repo_root=$(
+    CDPATH=''
+    cd -- "$script_dir/.."
+    pwd
+)
+
+# Agent CLIs pass their own environment.  The browser adapter needs none of
+# it (the bus address arrives as --bus), so start from an empty environment.
+if [ -d "$repo_root/src/helios" ]; then
+    exec /usr/bin/env -i \
+        LANG=C.UTF-8 \
+        PATH=/usr/bin:/bin \
+        PYTHONPATH="$repo_root/src" \
+        /usr/bin/python3 -m helios.browser_mcp "$@"
+fi
+exec /usr/bin/env -i \
+    LANG=C.UTF-8 \
+    PATH=/usr/bin:/bin \
+    /usr/bin/python3 -m helios.browser_mcp "$@"

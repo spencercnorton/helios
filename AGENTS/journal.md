@@ -1,5 +1,67 @@
 # Helios — Session Journal
 
+## 2026-10-16 — claude — Browser pane for agents (v0.106.0)
+
+- **Branch:** `claude/browser-pane` (stacked on `claude/usage-stats`)
+- **Why:** parity with the Claude desktop browser pane and the ChatGPT/Codex
+  built-in browser: agents should show HTML reports and dev servers in-app.
+- **What changed:** `widgets/browser_pane.py` (Adw.TabView of WebKit 6
+  WebViews, persistent NetworkSession under `state_dir()/browser`, UTF-8
+  default charset, per-host consent dialog for non-local reads);
+  `backend/browser_target.py` (address resolution + `is_local`);
+  `backend/browser_tools.py` (tool schemas, D-Bus names, `publish`/`server_entry`);
+  `browser_mcp.py` + `scripts/helios-browser-mcp` (stdio MCP → session-bus
+  `Call`); window: `Gtk.Paned` [main stack | pane], header toggle,
+  `win.toggle-browser` Ctrl+Shift+B, `register_object_with_closures2`.
+  Injection: Claude `--mcp-config` (merged with the Router), Codex thread
+  `config.mcp_servers` with `default_tools_approval_mode="approve"`, Muse
+  `requestedCapabilities: ["sessionMcp"]` + `config.mcpServers` (optional),
+  OpenRouter `EstateMcp(extra=...)`.
+- **Validation (real app on Xvfb, private bus + state dir):** every tool via
+  the real launcher (open/navigate/back/read/screenshot/tabs, refusals); the
+  approval dialog (Allow once → read, then Deny → error); a Claude Haiku
+  session opened and read `report.html` (first guessed `target` because Claude
+  defers MCP schemas — the error now names `url`); a resumed Muse session read
+  `details.html`; `codex exec` with the same server config read it (fails with
+  "requires approval" unless `approve`); a raw App Server `thread/start` with
+  the Helios thread config reported `helios_browser` `ready`.
+- **GPT review (gpt-6.1-sol) — fixed:** consent applied to a stale host;
+  every `file://` path was "local" (an agent could read `~/.codex/auth.json`);
+  agent `browser_open` of any remote URL was ungated (an egress path even under
+  a no-network Codex sandbox, since the tool is pre-approved); `browser_tabs`
+  leaked titles/URLs of pages the person opened; `about:blank` popups inherit
+  their opener's origin; deferred steps could raise without replying;
+  screenshot race; timed-out waiters leaked; `register_object_with_closures2`
+  is GLib 2.84+ (24.04 has 2.80); PNGs over 1 MiB broke OpenRouter's MCP client;
+  Codex's 60 s tool timeout vs the consent dialog.
+- **Second GPT pass — fixed by design, not patches:** a free `file://` page
+  could frame any file (screenshot showed it); a symlink flip + reload loaded
+  outside content; `http://evil.com\@localhost` was "localhost" to urlsplit
+  but evil.com to WebKit; dialogs outlived their call. Project/temp files now
+  load as `helios-file://<random root key>/…`, served by a handler that checks
+  the file it actually opened (`/proc/self/fd`) is inside the root — WebKit
+  refuses `file:` frames from that origin (verified by snapshot). `file://` is
+  never free; history moves and reloads re-ask; backslashes/control chars are
+  refused; the dialog expires at 170 s and a late answer does nothing; grants
+  clear when the tab leaves their scope; a folder containing `$HOME` frees
+  nothing.
+- **Third GPT pass — fixed:** another chat could learn a root key from
+  `browser_tabs` and frame/script that project (now: the handler serves a root
+  only when the requesting tab's own URL is on that key, and helios-file URLs
+  are always redacted); remote frames/fetches from free pages carried the
+  pane's cookies (now: ITP on the persistent session — measured, the framed
+  and `credentials:include` requests went from `sid=SIGNEDIN` to no cookie);
+  `.log`/README/source files failed as octet-stream (UTF-8 sniff →
+  text/plain); the caller-supplied `_cwd` (now a per-spawn token →
+  `(cwd, agent)` registry in `browser_tools`; unknown tokens are refused, never
+  widened to the selected chat); NUL paths raised ValueError unanswered; the
+  64 MiB cap is enforced on the read; fragments/queries kept; "Open in your
+  browser" maps back via `delocalize`; `/tmp` is no longer a free root (it
+  holds other agents' transcripts).
+- **Not done:** click/type/eval tools; Gemini; clear-browsing-data UI; GPT
+  inside the GUI rig (Codex credentials are in the GNOME keyring); remote
+  subresources embedded in a local page load without asking.
+
 ## 2026-10-16 — claude — Usage stats visible for every provider (v0.105.0)
 
 - **Branch:** `claude/usage-stats`

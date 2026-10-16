@@ -31,7 +31,7 @@ from gi.repository import GLib, GObject
 
 from helios.backend import model_catalog
 from helios.backend.muse_binary import MuseBinaryNotFound, find_muse_binary
-from helios.backend import muse_env
+from helios.backend import browser_tools, muse_env
 from helios.backend.muse_env import CLIENT_NAME, uuid7
 from helios.backend.process.codex_transcript import CodexTranscriptWriter
 from helios.backend.process.env_scrub import (
@@ -175,6 +175,7 @@ class MuseServeDriver(UserMessageQueueMixin, GObject.Object):
         self._pending_rpc: dict[int, str] = {}
         self._root_turn_id = ""
         self._turn_usage: dict[str, int] = {}
+        self._session_mcp = False  # granted at initialize
         self._blocks: dict[str, Block] = {}
         self._tool_outputs: dict[str, str] = {}
         self._agents: dict[str, dict[str, str]] = {}
@@ -302,19 +303,26 @@ class MuseServeDriver(UserMessageQueueMixin, GObject.Object):
 
         if not self._send("initialize", {
                 "clientInfo": {"name": CLIENT_NAME, "version": helios_version},
-                "capabilities": {"experimentalApi": True}}):
+                "capabilities": {"experimentalApi": True,
+                                 "requestedCapabilities": ["sessionMcp"]}}):
             raise MuseDriverSpawnError("Could not start `muse serve`.")
 
     def _begin_session(self) -> None:
         approval = _APPROVAL_MODES.get(self._permission_mode, "promptUnmatched")
+        extra = {}
+        browser = browser_tools.server_entry(self._cwd, "Muse") if self._session_mcp else None
+        if browser is not None:
+            # Optional: a pane that cannot start must never block the session.
+            extra["config"] = {"mcpServers": {browser_tools.MCP_SERVER_NAME: {
+                "transport": "stdio", "framing": "lineDelimitedJson", "mode": "optional", **browser}}}
         if self._resume_session_id:
             self._send("session/resume", {
                 "commandId": uuid7(), "sessionId": self._resume_session_id,
-                "excludeItems": True})
+                "excludeItems": True, **extra})
         else:
             self._send("session/start", {
                 "commandId": uuid7(), "workspaceRoot": self._cwd,
-                "modelId": self._model, "approvalMode": approval})
+                "modelId": self._model, "approvalMode": approval, **extra})
 
     def _on_session_bound(self, session: Any) -> None:
         if self._stopped or self._accounting_failed or not isinstance(session, dict):
@@ -566,6 +574,8 @@ class MuseServeDriver(UserMessageQueueMixin, GObject.Object):
                 return False
             result = msg.get("result")
             if method == "initialize":
+                granted = result.get("grantedCapabilities") if isinstance(result, dict) else None
+                self._session_mcp = isinstance(granted, list) and "sessionMcp" in granted
                 self._send("initialized", None, notify=True)
                 self._begin_session()
             elif method in ("session/start", "session/resume"):

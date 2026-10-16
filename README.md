@@ -89,6 +89,21 @@ session started in your home folder is read-only whatever you pick.
   </picture>
 </p>
 
+**A browser beside the chat.** Agents open HTML reports, local files and dev
+servers in a tabbed browser pane next to the transcript (Ctrl+Shift+B), and
+can read or screenshot what rendered to check their own work. You browse it
+like any browser — back, forward, reload, an address bar that also takes a file
+path or `localhost:5173` — and it keeps its own sign-ins, separate from your
+browser. The project's own files and loopback servers are the agent's to use;
+opening or reading any other site or file asks you first (once per tab, or
+always for a site), and pages you reached yourself are not shared until it does. Claude, GPT, Muse and OpenRouter sessions get the tools;
+Gemini's CLI has no per-session MCP option and uses its own browser.
+
+**Usage you can read at a glance.** Beside the context ring sits the fill and
+the tightest account limit (`84.2k / 200k · 5-hour 55%`); hover for the
+per-category split, every limit window with its reset, and this session's
+token totals.
+
 **A plan you own.** A Work carries an objective, a definition of done and an
 acceptance checklist that belong to you; the model's own plan is tracked
 beside it and can never rewrite what you accepted. In Plan mode Claude
@@ -241,6 +256,7 @@ audience.
 | `~/.helios/conversation-perms.json` | The permission mode, effort and workflow saved per conversation |
 | `~/.helios/logs/helios.log` | The log (rotates at 1 MB, three backups); `HELIOS_DEBUG=1` makes it verbose |
 | `~/.helios/openrouter.key` | Your OpenRouter key (0600) — see [SECURITY.md](SECURITY.md) for what leaves the machine |
+| `~/.helios/browser/` | The browser pane's own profile — cookies, sign-ins and cache, kept apart from your browser. Delete it to sign out of everything there |
 | `~/.helios/session-archive/` | Sessions idle for four days are moved here (at startup and once a day, at most eight at a time) and leave the sidebar |
 
 `HELIOS_STATE_DIR` relocates the log, Works, per-conversation permissions,

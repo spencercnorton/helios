@@ -221,3 +221,21 @@ def test_context_and_subscription_usage_reach_the_meter(tmp_path):
         ("muse_weekly", "Weekly usage", 100.0, "exceeded", 1_900_000_500),
     ]
     assert {r["provider"] for r in limits} == {"muse"}
+
+
+def test_session_mcp_browser_is_offered_only_when_granted(tmp_path):
+    from helios.backend import browser_tools
+
+    driver = _driver(tmp_path)
+    driver._session_id = ""
+    browser_tools.publish("unix:path=/run/user/1000/bus")
+    try:
+        driver._begin_session()
+        assert "config" not in driver._proc.stdin.frames()[-1]["params"]
+        driver._session_mcp = True
+        driver._begin_session()
+        server = driver._proc.stdin.frames()[-1]["params"]["config"]["mcpServers"]["helios_browser"]
+        assert server["transport"] == "stdio" and server["mode"] == "optional"
+        assert browser_tools.session_for(server["args"][-1])[1] == "Muse"
+    finally:
+        browser_tools.publish("")
